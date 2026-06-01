@@ -1,0 +1,48 @@
+Source,Category,Use for,Recommended filters / search terms,Keep,Avoid / delete,IsNew
+Rentals.ca,Aggregator,Managed buildings & split plays,South London map; White Oaks/Highland/Pond Mills/Old South; 1-2 bed; parking,Clear rent+parking+availability,"Expensive solo, no split logic",FALSE
+Zumper,Aggregator,Managed apts & stretch options,"Neighbourhood pages; studio/1-2 bed; under $1,600; parking",Brighton/Winston/Garden Vista-type,"Notify-only, no rent, far downtown",FALSE
+PadMapper,Aggregator,Map view of Zumper+others,South London polygon; price cap; parking,Cheapest Old South/Highland units,Stale duplicates,FALSE
+Apartments.com,Aggregator,Managed + commute-time-to-school filter,London ON; commute filter to OIART; utilities-included,"Short-commute, parking, clear rent",Overpriced w/o split,FALSE
+Kijiji,Aggregator,"Rooms, basements, splits","White Oaks/Pond Mills/Westminster; basement; parking; $500-1,300; sort newest",Address+parking+internet+July,"No parking/price, Fanshawe-north",FALSE
+Facebook Marketplace,Social,Off-market rooms/basements (high yield),"London; property rentals; $400-1,300; area keywords",Address+photos+parking,"Deposit-before-viewing, WhatsApp-only",FALSE
+RentSeeker.ca,Aggregator,"Floorplans, videos, landlord contacts",South London; 1-2 bed; parking,Near-OIART buildings w/ contacts,Downtown/north poor commute,TRUE
+liv.rent,Aggregator,ID-verified landlords (low scam),London under $1000; furnished filter; date,Verified south/west rooms/units,Unverified far posts,TRUE
+Realtor.ca,MLS,Private condos & splits (low scam),South London; 1-2 bed condos,"MLS condos w/ address, splittable",Full private rent over budget,FALSE
+Zolo,MLS,MLS rental cross-check,London rentals; south end,Documented condos/houses,Sale-only noise,TRUE
+HouseSigma,MLS,MLS rentals + sold data,London rentals map,Condos w/ history,Requires login for some,TRUE
+Point2Homes,Aggregator,Apartments + houses,London; price+bed filters,Clear managed listings,Lead-gen spam,TRUE
+RentFaster.ca,Aggregator,Growing in Ontario,London; map; parking,Private + managed w/ photos,Thin in some pockets,TRUE
+Rentboard.ca,Aggregator,Older but active in London,London ON; price filter,Local landlord posts,"Dated UI, verify live",TRUE
+RentCanada.com,Aggregator,National listings,London; bed/price,Managed buildings,Sparse,TRUE
+GottaRent,Aggregator,SW Ontario focus,London; price+bed,Local managed inventory,Sparse,TRUE
+Craigslist London,Social,Still some private posts,London apts/rooms; south end,Cheap private rooms,"High scam, verify hard",TRUE
+Roomies.ca,Roommate,Private rooms + compatibility,"London + parking + private room + $600-1,000",Pond Mills/White Oaks/Highland,"Vague, gender mismatch, no address",FALSE
+Roomster,Roommate,Rooms & shared,London; price; area,Address+parking rooms,Very vague posts,FALSE
+Places4Students,Student,Purpose-built student listings,London; near campus; rooms/units,Parking+utilities student houses,Far-from-OIART campus stock,TRUE
+SpareRoom,Roommate,Room/roommate (limited CA),London; room; budget,Any live London room,Mostly US/UK,TRUE
+Diggz,Roommate,Roommate matching,London; budget; prefs,Compatible-roommate splits,Thin in London,TRUE
+OIART housing page,Student,Highest-trust school leads (weekly),Contact listed OIART landlords first,"15 Dow, Deveron, any OIART post",Assuming old posts vacant,FALSE
+Western Off-Campus (offcampus.uwo.ca),Student,Backup student source,Near South/Old South/Wortley; parking/utilities,South-end student houses,Masonville/Western-heavy,FALSE
+Fanshawe Off-Campus Housing,Student,Fanshawe student board,South campus area; rooms; parking,Drivable south-end rooms,Main-campus north stock,TRUE
+LS Rentals,Student/Local,Verified partly-furnished units,South/central; 1-bed; transit; July,Verified near-OIART 1-beds,Western-only long commute,TRUE
+Better Student Rentals,Student/Local,"Public-good platform, direct contact",South London houses/rooms; parking,South-end rooms/houses,Fanshawe/Western-only far,TRUE
+Exclusive Rentals London,Student/Local,"20-yr manager, advanced filters",Area/rent/size; south-end; July,Verified near-OIART units,Richmond Row premium,TRUE
+uhomes,Student,"Purpose-built, bills bundled",London; ensuite/studio; check distance,South-end PBSA bills-in,Near-Western long drive,TRUE
+AmberStudent,Student,PBSA aggregator,London; studio/ensuite,Bills-included student suites,Western-clustered,TRUE
+Old Oak Properties,Local landlord,Major landlord since 1955,Browse south/west buildings; studio/1-bed,Well-managed near-OIART units,North-end far buildings,TRUE
+Drewlo Holdings,Local landlord,"9,000+ units, amenity buildings",Southeast/South buildings; 1-2 bed; near 401,2-bed splits + clean 1-beds,Hyde Park/north towers,TRUE
+Tricar,Local landlord,Upscale London towers,South/central buildings; 1-bed,Newer near-OIART towers,Downtown luxury over budget,TRUE
+Sifton Properties,Local landlord,Large London landlord,South/west communities; 1-2 bed,Managed near-OIART units,Far north/Hyde Park,TRUE
+Medallion Corporation,Local landlord,Apartment communities,London buildings; 1-2 bed; parking,South-end communities,North-only stock,TRUE
+Skyline Living,Local landlord,Ontario apartment REIT,London buildings; price/bed,Affordable managed units,Verify proximity,TRUE
+Realstar,Local landlord,"National manager, London towers",London; 1-2 bed,Clean managed units,Premium/over budget,TRUE
+Greenwin,Local landlord,Apartment manager,London buildings,Managed near-OIART,Sparse in south,TRUE
+Larlyn Property Management,Local landlord,London-based manager,South/west buildings,Local managed inventory,Verify location,TRUE
+York Property Management,Local landlord,London student+residential,South-end houses/units,Student-friendly south units,Western-clustered,TRUE
+M&R Property Management,Local landlord,London apartments,London buildings; 1-2 bed,Managed near-OIART,Verify proximity,TRUE
+Domus Student Housing,Student/Local,London student housing,Rooms/houses; near campus,South-end student rooms,Western/Fanshawe-only far,TRUE
+Reddit r/londonontario,Social,Community tips & sublets,Search 'rental'/'sublet'/'room',"Local leads, scam warnings","Unverified, DM scams",TRUE
+Facebook Groups (London Rentals/Student Housing),Social,Off-market + roommate posts,"Join London Ontario Rentals, Student Housing, Western/Fanshawe groups",Address+parking posts,"Deposit pressure, no lease",TRUE
+Kijiji - Rooms & Roommates,Aggregator,Affordable private rooms,"London; $400-1,050; sort newest; area keywords","Parking+internet, male/co-ed","Female-only, shared bedroom, far",FALSE
+Nextdoor,Social,Neighbourhood posts,London neighbourhoods; rentals,Quiet-street private rooms,"Sparse, unverified",TRUE
+London Free Press classifieds,Niche,Local newspaper rentals,London rentals classifieds,Older landlord posts,"Dated, verify live",TRUE
