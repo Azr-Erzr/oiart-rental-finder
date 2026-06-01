@@ -195,6 +195,13 @@ const SCORE_SHORT = {
   location:"commute", cost:"rent", parking:"parking", internet:"internet",
   privacy:"room type", lease:"lease timing", trust:"listing"
 };
+/* "Must-have" criteria: if any of these are N/A (never stated), the score is
+   capped one §7 band per missing item and the score pill turns amber/red — a
+   lead can't look like a 90 when a must-have is invisible. Edit this set to add
+   a 4th (e.g. "privacy" or "lease") or relax it. Caps map to the score bands:
+   0 missing = no cap, 1 = 79 (strong→add-if-gap), 2 = 69 (backup), 3+ = 59 (cut). */
+const CRITICAL_KEYS = ["location", "cost", "parking"];
+const CRITICAL_CAP = {0:100, 1:79, 2:69};
 
 function computeScore(r){
   const comps = [];
@@ -294,9 +301,13 @@ function computeScore(r){
   const known = comps.filter(c => !c.na);
   const knownMax = known.reduce((a, c) => a + c.max, 0);
   const earned = known.reduce((a, c) => a + c.earned, 0);
-  const total = knownMax ? Math.max(0, Math.min(100, Math.round(earned / knownMax * 100))) : 0;
+  const raw = knownMax ? Math.max(0, Math.min(100, Math.round(earned / knownMax * 100))) : 0;
+  // Cap one band per missing must-have so an unknown big-3 field can't inflate.
+  const criticalUnknown = comps.filter(c => c.na && CRITICAL_KEYS.includes(c.key)).map(c => c.key);
+  const cap = criticalUnknown.length >= 3 ? 59 : CRITICAL_CAP[criticalUnknown.length];
+  const total = Math.min(raw, cap);
   return {
-    total,
+    total, raw, cap, criticalUnknown,
     components: comps,
     unconfirmed: comps.filter(c => c.na).map(c => c.key),
     negatives: comps.filter(c => c.level === "bad").map(c => c.key),
@@ -305,11 +316,21 @@ function computeScore(r){
   };
 }
 
+// '' (essentials known), 'scorewarn' (1 must-have missing), 'scorecrit' (2+).
+function scoreLevelClass(r){
+  const n = (r.ScoreCritUnknown || []).length;
+  return n >= 2 ? "scorecrit" : n === 1 ? "scorewarn" : "";
+}
+
 function scoreBreakdown(r){
   const comps = r.ScoreComponents || [];
   const body = comps.map(c => c.na ? `${c.label} N/A` : `${c.label} ${c.earned}/${c.max}`).join(" · ");
   let s = `Auto-score ${r.ScoreNum}/100 — ${body}`;
   if(Number.isFinite(r.ScoreKnownMax) && r.ScoreKnownMax < 100) s += ` · scored on ${r.ScoreKnownMax}/100 known pts`;
+  if(r.ScoreComputed && (r.ScoreCritUnknown || []).length){
+    const names = r.ScoreCritUnknown.map(k => SCORE_SHORT[k] || k).join(", ");
+    s += ` · ⚠ capped at ${r.ScoreCap} — must-have unconfirmed: ${names}`;
+  }
   if(r.ScoreComputed && Number.isFinite(r.ScoreSheet)) s += ` · (sheet had ${r.ScoreSheet})`;
   if(!r.ScoreComputed) s += ` · manual ScoreOverride in use`;
   return s;
@@ -371,6 +392,9 @@ function deriveListing(o){
   const override = parseNum(o.ScoreOverride);
   o.ScoreSheet       = parseNum(o.Score);
   o.ScoreAuto        = auto.total;
+  o.ScoreRaw         = auto.raw;
+  o.ScoreCap         = auto.cap;
+  o.ScoreCritUnknown = auto.criticalUnknown;
   o.ScoreComponents  = auto.components;
   o.ScoreUnconfirmed = auto.unconfirmed;
   o.ScoreNegatives   = auto.negatives;
@@ -520,7 +544,7 @@ let hasRenderedData = false;
 function popup(r){
   return `<h3>${safe(textOr(r.Priority, r.DisplayID))}. ${safe(textOr(r["Listing / lead"], "Untitled listing"))}</h3>
   ${popupImage(r)}
-  <span class="pill ${pillClass(r)}">${volLabel(r)}</span><span class="pill scorepill" title="${safe(scoreBreakdown(r))}">Score ${safe(r.ScoreNum)}</span><span class="pill kindpill ${kindClass(r)}">${safe(r.ListingKind)}</span>${r.IsNew?'<span class="pill newpill">★ new</span>':''}<br>
+  <span class="pill ${pillClass(r)}">${volLabel(r)}</span><span class="pill scorepill ${scoreLevelClass(r)}" title="${safe(scoreBreakdown(r))}">Score ${safe(r.ScoreNum)}</span><span class="pill kindpill ${kindClass(r)}">${safe(r.ListingKind)}</span>${r.IsNew?'<span class="pill newpill">★ new</span>':''}<br>
   <b>Area:</b> ${safe(textOr(r.Neighbourhood))}<br><b>Locator:</b> ${safe(textOr(r["Address / locator"]))}<br>
   <b>Type:</b> ${safe(textOr(r.Type))}<br><b>Rent:</b> ${safe(textOr(r["Rent text"]))}<br>
   <b>Drive:</b> ${safe(textOr(r["Est drive min"]))}${asText(r["Est drive min"])?" min":""} · <b>Parking:</b> ${safe(textOr(r.Parking))}<br>
@@ -548,7 +572,7 @@ function card(r){
   const rent = textOr(r["Rent text"]);
   const drive = asText(r["Est drive min"]) ? `~${safe(r["Est drive min"])} min` : "drive not entered";
   return `<div class="card${selected}" data-id="${safe(r.ID)}">
-  <div class="cardhead"><div class="pills"><span class="pill ${pillClass(r)}">${volLabel(r)}</span><span class="pill scorepill" title="${safe(scoreBreakdown(r))}">#${safe(textOr(r.Priority, r.DisplayID))} · ${safe(r.ScoreNum)}${r.ScoreComputed && Number.isFinite(r.ScoreSheet) && r.ScoreSheet!==r.ScoreNum?` <span class="sheetcmp">(was ${safe(r.ScoreSheet)})</span>`:""}</span><span class="pill kindpill ${kindClass(r)}">${safe(r.ListingKind)}</span>${r.IsNew?'<span class="pill newpill">★ new</span>':''}${asText(r.DuplicateOf)?`<span class="pill warnpill" title="Marked as duplicate of ${safe(r.DuplicateOf)}">dup of ${safe(r.DuplicateOf)}</span>`:''}${r.NeedsId?'<span class="pill warnpill">Needs ID</span>':''}</div>${action}</div>
+  <div class="cardhead"><div class="pills"><span class="pill ${pillClass(r)}">${volLabel(r)}</span><span class="pill scorepill ${scoreLevelClass(r)}" title="${safe(scoreBreakdown(r))}">#${safe(textOr(r.Priority, r.DisplayID))} · ${safe(r.ScoreNum)}${r.ScoreComputed && Number.isFinite(r.ScoreSheet) && r.ScoreSheet!==r.ScoreNum?` <span class="sheetcmp">(was ${safe(r.ScoreSheet)})</span>`:""}</span><span class="pill kindpill ${kindClass(r)}">${safe(r.ListingKind)}</span>${r.IsNew?'<span class="pill newpill">★ new</span>':''}${asText(r.DuplicateOf)?`<span class="pill warnpill" title="Marked as duplicate of ${safe(r.DuplicateOf)}">dup of ${safe(r.DuplicateOf)}</span>`:''}${r.NeedsId?'<span class="pill warnpill">Needs ID</span>':''}</div>${action}</div>
   <h3>${safe(textOr(r["Listing / lead"], "Untitled listing"))}</h3>
   ${imageThumb(r)}
   <div class="meta">${safe(textOr(r.Neighbourhood))} · ${safe(textOr(r["Address / locator"]))}</div>
@@ -838,7 +862,7 @@ function render(options={}){
     <td>${safe(textOr(r.Neighbourhood))}</td>
     <td><b>${safe(textOr(r["Rent text"]))}</b><br><span class="meta">share ${safe(textOr(r["Approx monthly share"]))}</span></td>
     <td>${safe(textOr(r["Est drive min"]))}${asText(r["Est drive min"])?" min":""}<br><span class="meta">${safe(textOr(r["Km straight-line"]))}${asText(r["Km straight-line"])?" km":""}</span></td>
-    <td><b title="${safe(scoreBreakdown(r))}">${safe(r.ScoreNum)}</b>${r.ScoreComputed && Number.isFinite(r.ScoreSheet) && r.ScoreSheet!==r.ScoreNum?`<br><span class="meta">sheet ${safe(r.ScoreSheet)}</span>`:""}${(r.ScoreUnconfirmed&&r.ScoreUnconfirmed.length)?`<br><span class="meta naflag" title="Not stated yet — confirm: ${safe(r.ScoreUnconfirmed.map(k=>SCORE_SHORT[k]||k).join(', '))}">⚠ ${r.ScoreUnconfirmed.length} to confirm</span>`:""}</td>
+    <td><b class="scoreval ${scoreLevelClass(r)}" title="${safe(scoreBreakdown(r))}">${safe(r.ScoreNum)}</b>${r.ScoreComputed && Number.isFinite(r.ScoreSheet) && r.ScoreSheet!==r.ScoreNum?`<br><span class="meta">sheet ${safe(r.ScoreSheet)}</span>`:""}${(r.ScoreUnconfirmed&&r.ScoreUnconfirmed.length)?`<br><span class="meta naflag" title="Not stated yet — confirm: ${safe(r.ScoreUnconfirmed.map(k=>SCORE_SHORT[k]||k).join(', '))}">⚠ ${r.ScoreUnconfirmed.length} to confirm</span>`:""}</td>
     <td>${safe(textOr(r.Status || r.Action))}${asText(r.DuplicateOf)?`<br><span class="meta">Dup of ${safe(r.DuplicateOf)}</span>`:""}${r.ScamRisk?`<br><span class="meta">Scam risk: ${safe(r.ScamRisk)}</span>`:""}</td>
     <td>${r.ContactedBool?"Contacted":"Not contacted"}<br><span class="meta">${safe(textOr(r.LastContacted || r.Response))}</span></td>
     <td>${safe(textOr(r.Parking))}</td>

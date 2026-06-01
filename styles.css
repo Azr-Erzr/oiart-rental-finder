@@ -60,7 +60,12 @@ input:focus,select:focus{outline:2px solid var(--green-soft);border-color:var(--
 .pill{display:inline-block;padding:4px 9px;border-radius:999px;font-size:11px;font-weight:800;margin:0 4px 5px 0;}
 .core{background:var(--green-soft);color:var(--green);}
 .stretch{background:var(--blue-soft);color:var(--blue);}
-.scorepill{background:var(--gold-soft);color:#8c551b;}
+.scorepill{background:var(--green-soft);color:var(--green);}
+.scorepill.scorewarn{background:var(--gold-soft);color:#8c551b;}
+.scorepill.scorecrit{background:#fbe4de;color:var(--red);}
+.scorepill.scorewarn::before,.scorepill.scorecrit::before{content:"⚠ ";}
+.scoreval.scorewarn{color:#8c551b;}
+.scoreval.scorecrit{color:var(--red);}
 .newpill{background:var(--new-soft);color:#7a5e07;}
 .unknownpill,.warnpill{background:#f2eee6;color:var(--muted);}
 .kindpill{white-space:nowrap;}
