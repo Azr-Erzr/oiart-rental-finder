@@ -35,7 +35,11 @@ const ALLOWED_FIELDS = [
   "UpdatedAt",
   "UpdatedBy",
   "CanonicalKey",
-  "DuplicateOf"
+  "DuplicateOf",
+  "ImageURL",
+  "ImageAlt",
+  "ImageSource",
+  "ImageChecked"
 ];
 
 function doPost(e) {
@@ -123,7 +127,7 @@ function ensureColumns_(sh, header, columns) {
 }
 
 function normalizeValue_(field, value) {
-  if (["Archived", "Contacted", "ViewingBooked", "ParkingConfirmed", "InternetConfirmed", "AddressConfirmed", "JulyConfirmed"].indexOf(field) >= 0) {
+  if (["Archived", "Contacted", "ViewingBooked", "ParkingConfirmed", "InternetConfirmed", "AddressConfirmed", "JulyConfirmed", "ImageChecked"].indexOf(field) >= 0) {
     return String(value).toUpperCase() === "TRUE";
   }
   return value == null ? "" : value;
@@ -163,8 +167,12 @@ function formatListingsSheet_(sh) {
     "FriendNotes": 260,
     "UpdatedAt": 170,
     "UpdatedBy": 130,
+    "DuplicateOf": 110,
     "CanonicalKey": 220,
-    "DuplicateOf": 110
+    "ImageURL": 220,
+    "ImageAlt": 180,
+    "ImageSource": 140,
+    "ImageChecked": 130
   };
   const header = sh.getRange(1, 1, 1, lastCol).getValues()[0].map(String);
   header.forEach(function(name, i) {

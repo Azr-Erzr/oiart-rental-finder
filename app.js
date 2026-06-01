@@ -30,11 +30,14 @@ const WORKFLOW_COLUMNS = [
   "AddressConfirmed","JulyConfirmed","ScamRisk","UpdatedAt","UpdatedBy",
   "CanonicalKey","DuplicateOf"
 ];
+const IMAGE_COLUMNS = [
+  "ImageURL","ImageAlt","ImageSource","ImageChecked"
+];
 const WRITABLE_FIELDS = [
   "Archived","Status","Contacted","LastContacted","Response","ViewingBooked",
   "ViewingDate","Decision","RemoveReason","FriendNotes","ParkingConfirmed",
   "InternetConfirmed","AddressConfirmed","JulyConfirmed","ScamRisk",
-  "UpdatedAt","UpdatedBy"
+  "UpdatedAt","UpdatedBy","ImageURL","ImageAlt","ImageSource","ImageChecked"
 ];
 
 /* Option B fallback (only if you ever hit a CORS edge case with gviz above):
@@ -73,6 +76,18 @@ function linkButton(url, label, cls="", missing="No link entered"){
   return href
     ? `<a class="linkbtn ${cls}" href="${safe(href)}" target="_blank" rel="noopener">${safe(label)}</a>`
     : `<span class="linkbtn disabled" title="${safe(missing)}">${safe(missing)}</span>`;
+}
+function listingImageUrl(r){ return safeUrl(r.ImageURL || r["Image URL"] || r.Image); }
+function imageAlt(r){ return textOr(r.ImageAlt, textOr(r["Listing / lead"], "Rental listing image")); }
+function imageThumb(r){
+  const url = listingImageUrl(r);
+  if(!url) return "";
+  return `<div class="thumbwrap"><img src="${safe(url)}" alt="${safe(imageAlt(r))}" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentElement.remove()"></div>`;
+}
+function popupImage(r){
+  const url = listingImageUrl(r);
+  if(!url) return "";
+  return `<img class="popupthumb" src="${safe(url)}" alt="${safe(imageAlt(r))}" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`;
 }
 function routeLink(r){
   const explicit = safeUrl(r["Maps link"]);
@@ -155,7 +170,7 @@ function deriveListing(o){
   const drive = parseNum(o["Est drive min"]);
   const park  = String(o["Parking"] || "");
   const net   = String(o["Internet / utilities"] || "");
-  WORKFLOW_COLUMNS.forEach(k => { if(o[k] == null) o[k] = ""; });
+  [...WORKFLOW_COLUMNS, ...IMAGE_COLUMNS].forEach(k => { if(o[k] == null) o[k] = ""; });
   o.PriorityNum = parseNum(o["Priority"]);
   o.ScoreNum    = parseNum(o["Score"]);
   o.DriveNum    = parseNum(o["Est drive min"]);
@@ -280,6 +295,7 @@ if(hasMap){
 let markers=[], markerById={}, currentFilteredList=[];
 function popup(r){
   return `<h3>${safe(textOr(r.Priority, r.DisplayID))}. ${safe(textOr(r["Listing / lead"], "Untitled listing"))}</h3>
+  ${popupImage(r)}
   <span class="pill ${pillClass(r)}">${volLabel(r)}</span><span class="pill scorepill">Score ${safe(textOr(r.Score))}</span>${r.IsNew?'<span class="pill newpill">★ new</span>':''}<br>
   <b>Area:</b> ${safe(textOr(r.Neighbourhood))}<br><b>Locator:</b> ${safe(textOr(r["Address / locator"]))}<br>
   <b>Type:</b> ${safe(textOr(r.Type))}<br><b>Rent:</b> ${safe(textOr(r["Rent text"]))}<br>
@@ -309,6 +325,7 @@ function card(r){
   return `<div class="card" data-id="${safe(r.ID)}">
   <div class="cardhead"><div class="pills"><span class="pill ${pillClass(r)}">${volLabel(r)}</span><span class="pill scorepill">#${safe(textOr(r.Priority, r.DisplayID))} · ${safe(textOr(r.Score, "score not entered"))}</span>${r.IsNew?'<span class="pill newpill">★ new</span>':''}${r.NeedsId?'<span class="pill warnpill">Needs ID</span>':''}</div>${action}</div>
   <h3>${safe(textOr(r["Listing / lead"], "Untitled listing"))}</h3>
+  ${imageThumb(r)}
   <div class="meta">${safe(textOr(r.Neighbourhood))} · ${safe(textOr(r["Address / locator"]))}</div>
   <div class="rent">${safe(rent)} <span class="meta" style="font-weight:500">· ${drive}</span></div>
   <div class="meta">${safe(textOr(r["Why add / note"]))}</div>
@@ -643,7 +660,7 @@ function exportFilteredCsv(){
     "Type","Rent text","Approx monthly share","Est drive min","Parking","Internet / utilities",
     "Availability","What to verify","URL","Maps link","Score","Archived","IsNew"
   ];
-  const cols = [...baseCols, ...WORKFLOW_COLUMNS];
+  const cols = [...baseCols, ...WORKFLOW_COLUMNS, ...IMAGE_COLUMNS];
   const csv = [cols.join(","), ...filtered().map(r => cols.map(c => csvEscape(r[c])).join(","))].join("\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
