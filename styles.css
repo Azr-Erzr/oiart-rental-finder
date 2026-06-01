@@ -67,9 +67,13 @@ input:focus,select:focus{outline:2px solid var(--green-soft);border-color:var(--
 .workflowedit{margin-top:10px;border:1px solid #eee2d2;border-radius:10px;background:#fffaf2;padding:8px;}
 .workflowedit summary{cursor:pointer;font-size:12px;font-weight:800;color:var(--green);}
 .workflowgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:9px;}
+.workflowgrid-simple{grid-template-columns:1fr;}
 .workflowgrid label,.workflowedit>label{font-size:10.5px;}
 .workflowgrid input,.workflowgrid select,.workflowedit textarea{margin-top:4px;border-radius:8px;padding:7px 8px;font-size:12px;}
 .workflowedit textarea{width:100%;min-height:58px;resize:vertical;}
+.workflowactions{margin-top:8px;}
+.advancededit{margin-top:8px;border-top:1px solid #eee2d2;padding-top:7px;}
+.advancededit summary{color:var(--muted);font-size:11.5px;}
 .workflowchecks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;margin:8px 0;}
 .workflowchecks label{font-size:11.5px;font-weight:600;color:var(--muted);text-transform:none;letter-spacing:0;margin:0;}
 .workflowchecks input{width:auto;margin-right:5px;}

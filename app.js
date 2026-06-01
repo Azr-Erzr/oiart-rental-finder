@@ -264,7 +264,7 @@ function card(r){
   const arch=isArchived(r);
   const action = arch
     ? `<button class="restorebtn" data-restore="${safe(r.ID)}">↩ Restore</button>`
-    : `<button class="trash" data-trash="${safe(r.ID)}" title="Archive (remove from active list + map)">🗑</button>`;
+    : `<button class="trash" data-trash="${safe(r.ID)}" title="Archive to the Sheet (hide from Active)">🗑</button>`;
   const seen = r["Date seen"] ? `seen ${safe(r["Date seen"])}` : "";
   const chk = r["Last checked"] ? ` · checked ${safe(r["Last checked"])}` : "";
   const workflow = [
@@ -291,13 +291,23 @@ function checked(value){ return truthy(value) ? " checked" : ""; }
 function workflowEditor(r){
   return `<details class="workflowedit" data-workflow-id="${safe(r.ID)}">
     <summary>Update status</summary>
-    <div class="workflowgrid">
+    <div class="workflowgrid workflowgrid-simple">
       <label>Status
         <select data-field="Status">
           <option value=""></option>
           ${["Message first","Contacted","Waiting reply","Viewing booked","Applied","Good option","Watch","Gone","Not a fit","Scam risk","Archived"].map(v=>`<option value="${safe(v)}"${selected(r.Status || r.Action, v)}>${safe(v)}</option>`).join("")}
         </select>
       </label>
+      <label>Friend notes <textarea data-field="FriendNotes" placeholder="Quick shared note">${safe(r.FriendNotes)}</textarea></label>
+    </div>
+    <div class="links workflowactions">
+      <button class="linkbtn copy" data-save-workflow="${safe(r.ID)}" type="button">Save to Sheet</button>
+      <button class="linkbtn copy" data-status-quick="${safe(r.ID)}" data-status-value="Waiting reply" type="button">Waiting reply</button>
+      <button class="linkbtn copy" data-status-quick="${safe(r.ID)}" data-status-value="Archived" type="button">Archive</button>
+    </div>
+    <details class="advancededit">
+      <summary>Advanced fields</summary>
+      <div class="workflowgrid">
       <label>Response
         <select data-field="Response">
           <option value=""></option>
@@ -313,16 +323,11 @@ function workflowEditor(r){
       <label>Last contacted <input data-field="LastContacted" type="text" placeholder="YYYY-MM-DD" value="${safe(r.LastContacted)}"></label>
       <label>Viewing date <input data-field="ViewingDate" type="text" placeholder="YYYY-MM-DD / time" value="${safe(r.ViewingDate)}"></label>
       <label>Scam risk <input data-field="ScamRisk" type="text" placeholder="low / medium / high" value="${safe(r.ScamRisk)}"></label>
-    </div>
-    <div class="workflowchecks">
+      </div>
+      <div class="workflowchecks">
       ${["Contacted","ViewingBooked","ParkingConfirmed","InternetConfirmed","AddressConfirmed","JulyConfirmed"].map(f=>`<label><input data-field="${f}" type="checkbox"${checked(r[f])}> ${safe(f.replace(/([A-Z])/g," $1").trim())}</label>`).join("")}
-    </div>
-    <label>Friend notes <textarea data-field="FriendNotes" placeholder="Quick shared note">${safe(r.FriendNotes)}</textarea></label>
-    <div class="links">
-      <button class="linkbtn copy" data-save-workflow="${safe(r.ID)}" type="button">Save to Sheet</button>
-      <button class="linkbtn copy" data-status-quick="${safe(r.ID)}" data-status-value="Archived" type="button">Mark archived</button>
-      <button class="linkbtn copy" data-status-quick="${safe(r.ID)}" data-status-value="Waiting reply" type="button">Waiting reply</button>
-    </div>
+      </div>
+    </details>
   </details>`;
 }
 
