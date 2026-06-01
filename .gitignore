@@ -1,0 +1,7 @@
+# local dev preview server — not needed for hosting
+_serve.mjs
+.claude/
+
+# OS noise
+Thumbs.db
+.DS_Store

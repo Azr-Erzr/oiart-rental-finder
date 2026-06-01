@@ -8,113 +8,14 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<style>
-:root{
-  --bg:#f4efe7; --panel:#fffdf9; --ink:#2b2620; --muted:#766b5e; --line:#e6dccc;
-  --green:#2f6f57; --green-soft:#e2efe8; --blue:#315f87; --blue-soft:#e0eaf4;
-  --gold:#b26d25; --gold-soft:#fbf0dc; --red:#9d3e2f; --new:#caa12a; --new-soft:#fbf4d8;
-  --shadow:0 10px 34px rgba(64,44,28,.08);
-}
-*{box-sizing:border-box;}
-body{margin:0;background:var(--bg);color:var(--ink);font-family:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}
-h1,h2,h3{font-family:"Fraunces",Georgia,serif;letter-spacing:-.01em;margin:0;}
-a{color:var(--blue);font-weight:600;text-decoration:none;}
-a:hover{text-decoration:underline;}
-.appbar{position:sticky;top:0;z-index:1000;background:rgba(255,253,249,.92);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);padding:14px 26px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;}
-.appbar .brand{font-family:"Fraunces";font-weight:600;font-size:20px;}
-.appbar .tag{font-size:12.5px;color:var(--muted);}
-.appbar .spacer{flex:1;}
-.appbar .dl{font-size:13px;font-weight:700;background:var(--ink);color:#fff;padding:8px 14px;border-radius:10px;}
-.appbar .dl:hover{background:var(--green);text-decoration:none;}
-.hero{padding:26px 26px 6px;}
-.hero h1{font-size:clamp(26px,4vw,40px);}
-.hero p{color:var(--muted);max-width:80ch;line-height:1.5;margin:8px 0 0;}
-.wrap{max-width:1600px;margin:0 auto;padding:16px 26px 50px;}
-.kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin:14px 0 18px;}
-@media(max-width:1000px){.kpis{grid-template-columns:repeat(3,1fr);}}
-@media(max-width:560px){.kpis{grid-template-columns:repeat(2,1fr);}}
-.kpi{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px 16px;box-shadow:var(--shadow);}
-.kpi .num{font-family:"Fraunces";font-size:28px;font-weight:600;}
-.kpi .label{font-size:12.5px;color:var(--muted);margin-top:2px;}
-.kpi.green .num{color:var(--green);} .kpi.blue .num{color:var(--blue);} .kpi.gold .num{color:var(--gold);}
-.toolbar{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:16px;box-shadow:var(--shadow);margin-bottom:16px;}
-.fields{display:grid;grid-template-columns:1.4fr .9fr 1.1fr .9fr .7fr;gap:12px;}
-@media(max-width:1000px){.fields{grid-template-columns:1fr 1fr;}}
-label{display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px;}
-input,select{width:100%;border:1px solid var(--line);background:#fff;border-radius:11px;padding:10px 12px;font-size:14px;font-family:inherit;color:var(--ink);}
-input:focus,select:focus{outline:2px solid var(--green-soft);border-color:var(--green);}
-.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:13px;align-items:center;}
-.btn{border:1px solid var(--line);background:#fff;border-radius:999px;padding:8px 14px;cursor:pointer;font-weight:700;font-size:13px;color:var(--ink);font-family:inherit;transition:.12s;}
-.btn:hover{border-color:var(--green);}
-.btn.active{background:var(--green);color:#fff;border-color:var(--green);}
-.btn.new.active{background:var(--new);border-color:var(--new);color:#3a2f08;}
-.btn.ghost{margin-left:auto;color:var(--muted);}
-.grid{display:grid;grid-template-columns:1.45fr .55fr;gap:16px;align-items:stretch;}
-@media(max-width:1100px){.grid{grid-template-columns:1fr;}}
-#map{height:660px;border-radius:18px;border:1px solid var(--line);overflow:hidden;background:#e9e0d2;box-shadow:var(--shadow);}
-.side{height:660px;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:14px;box-shadow:var(--shadow);}
-.side h2{font-size:15px;margin-bottom:4px;}
-.side .sub{font-size:12.5px;color:var(--muted);margin-bottom:10px;}
-.card{border:1px solid var(--line);background:#fff;border-radius:14px;padding:13px;margin:0 0 11px;transition:.12s;cursor:pointer;}
-.card:hover{border-color:var(--green);transform:translateY(-1px);box-shadow:0 8px 20px rgba(47,111,87,.1);}
-.card h3{font-size:15.5px;line-height:1.2;margin-bottom:5px;}
-.card .meta{color:var(--muted);font-size:12.5px;}
-.card .rent{font-weight:700;font-size:14px;margin:5px 0;}
-.pill{display:inline-block;padding:4px 9px;border-radius:999px;font-size:11px;font-weight:800;margin:0 4px 5px 0;}
-.core{background:var(--green-soft);color:var(--green);}
-.stretch{background:var(--blue-soft);color:var(--blue);}
-.scorepill{background:var(--gold-soft);color:#8c551b;}
-.newpill{background:var(--new-soft);color:#7a5e07;}
-.links{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px;}
-.linkbtn{display:inline-block;padding:6px 11px;background:#eef5fb;border:1px solid #d6e5f2;border-radius:9px;font-size:12px;font-weight:600;}
-.linkbtn.route{background:var(--green-soft);border-color:#bcdccb;color:var(--green);}
-.trash{margin-left:auto;border:1px solid var(--line);background:#fff;border-radius:9px;padding:6px 9px;cursor:pointer;font-size:13px;color:var(--red);line-height:1;}
-.trash:hover{background:#fbe4de;border-color:var(--red);}
-.cardhead{display:flex;align-items:flex-start;gap:6px;}
-.cardhead .pills{flex:1;}
-.restorebtn{border:1px solid var(--line);background:#fff;border-radius:8px;padding:5px 10px;cursor:pointer;font-size:12px;font-weight:600;color:var(--green);}
-.restorebtn:hover{background:var(--green-soft);}
-.viewtabs{display:inline-flex;gap:4px;background:#efe7da;border-radius:999px;padding:4px;margin-left:8px;}
-.viewtab{border:none;background:transparent;border-radius:999px;padding:6px 14px;cursor:pointer;font-weight:700;font-size:13px;color:var(--muted);font-family:inherit;}
-.viewtab.active{background:#fff;color:var(--ink);box-shadow:0 1px 4px rgba(0,0,0,.08);}
-.sitegroup{margin-bottom:8px;}
-.sitegroup h3{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--gold);margin:14px 0 8px;}
-.archivebar{background:var(--gold-soft);border:1px solid #efd3a8;border-radius:12px;padding:10px 14px;font-size:13px;color:#5d4223;margin-bottom:12px;display:none;}
-.archivebar.show{display:block;}
-.panel{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:16px;margin:16px 0;box-shadow:var(--shadow);}
-.panel h2{font-size:18px;margin-bottom:4px;}
-.panel .sub{color:var(--muted);font-size:13px;margin-bottom:12px;}
-.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:16px;background:#fff;}
-table{border-collapse:collapse;width:100%;min-width:1150px;}
-th,td{padding:10px 12px;border-bottom:1px solid #efe6d9;text-align:left;vertical-align:top;font-size:13px;}
-th{position:sticky;top:0;background:#f1ebe0;z-index:2;text-transform:uppercase;letter-spacing:.04em;color:#5f5145;font-size:11.5px;cursor:pointer;user-select:none;white-space:nowrap;}
-th:hover{color:var(--green);}
-th .arr{opacity:.5;font-size:10px;}
-tr:hover td{background:#fffaf2;}
-.rownew{background:var(--new-soft);}
-.marker-label{display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;color:#fff;font-weight:800;font-size:12px;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.3);}
-.marker-label.vol1{background:var(--green);}
-.marker-label.vol2{background:var(--blue);}
-.marker-label.oiart{background:var(--gold);font-size:15px;}
-.marker-label.isnew{box-shadow:0 0 0 3px var(--new),0 2px 6px rgba(0,0,0,.3);}
-.leaflet-popup-content{font-family:"Inter",sans-serif;min-width:250px;}
-.leaflet-popup-content h3{font-family:"Fraunces";margin:0 0 6px;}
-.note{background:var(--gold-soft);border:1px solid #efd3a8;border-radius:14px;padding:13px 16px;color:#5d4223;font-size:13.5px;line-height:1.5;}
-.sitegrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;}
-.sitecard{border:1px solid var(--line);border-radius:14px;padding:13px;background:#fff;}
-.sitecard.new{background:var(--new-soft);border-color:#e8d48f;}
-.sitecard h3{font-size:15px;margin-bottom:3px;}
-.sitecard .role{font-size:12.5px;color:var(--muted);margin-bottom:7px;}
-.sitecard .f{font-size:12px;margin:4px 0;}
-.sitecard .f b{color:var(--ink);}
-footer{color:var(--muted);font-size:12.5px;text-align:center;padding:20px;}
-</style>
+<link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <div class="appbar">
   <span class="brand">OIART Rental Finder</span>
   <span class="tag">London, ON · 61 active leads · scored & mapped</span>
   <span class="spacer"></span>
+  <span class="sourcebadge" id="sourceBadge">Loading data...</span>
   <a class="dl" href="OIART_rental_master_tracker_EXPANDED.xlsx" download>⬇ Excel master</a>
 </div>
 
@@ -139,7 +40,17 @@ footer{color:var(--muted);font-size:12.5px;text-align:center;padding:20px;}
       <button class="btn" id="parking">Parking</button>
       <button class="btn" id="internet">Internet incl.</button>
       <button class="btn new" id="newonly">★ New this round</button>
+      <button class="btn" data-filter="notContacted">Not contacted</button>
+      <button class="btn" data-filter="waitingReply">Waiting reply</button>
+      <button class="btn" data-filter="viewingBooked">Viewing booked</button>
+      <button class="btn" data-filter="goodOption">Good option</button>
+      <button class="btn" data-filter="needsParking">Needs parking verify</button>
+      <button class="btn" data-filter="needsInternet">Needs internet verify</button>
+      <button class="btn" data-filter="needsAddress">Needs address</button>
+      <button class="btn" data-filter="needsJuly">Needs July</button>
       <button class="btn" id="refresh" title="Re-fetch the latest data from the Google Sheet">↻ Refresh data</button>
+      <button class="btn" id="exportCsv">Export filtered CSV</button>
+      <button class="btn" id="printView">Print / share view</button>
       <button class="btn ghost" id="reset">Reset</button>
     </div>
   </div>
@@ -156,7 +67,7 @@ footer{color:var(--muted);font-size:12.5px;text-align:center;padding:20px;}
           <button class="viewtab" id="tabArchived">Archived</button>
         </div>
       </div>
-      <div class="sub" id="sideSub">Best fit first. Click a card to focus its pin; the trash icon archives a listing (drops it off the map + active list).</div>
+      <div class="sub" id="sideSub">Best fit first. Click a card to focus its pin. Archive is session-only here unless write-back is configured; use the Sheet for shared changes.</div>
       <div class="archivebar" id="archivebar"></div>
       <div id="cards"></div>
     </div>
@@ -175,8 +86,11 @@ footer{color:var(--muted);font-size:12.5px;text-align:center;padding:20px;}
           <th data-k="RentNum">Rent</th>
           <th data-k="DriveNum">Drive</th>
           <th data-k="ScoreNum">Score</th>
+          <th data-k="Status">Status</th>
+          <th data-k="LastContacted">Contact</th>
           <th data-k="Parking">Parking</th>
           <th data-k="Internet / utilities">Internet/util</th>
+          <th data-k="Decision">Decision</th>
           <th>Links</th>
         </tr></thead>
         <tbody id="tbody"></tbody>
@@ -190,412 +104,11 @@ footer{color:var(--muted);font-size:12.5px;text-align:center;padding:20px;}
     <div class="sitegrid" id="sites"></div>
   </div>
 
-  <div class="note"><b>Honest notes:</b> map pins are exact where an address was given, otherwise a neighbourhood centroid (so a few sit at the area's middle). Drive times are estimates — confirm in Google Maps at your real commute time. Several new room leads still need parking / internet / July start confirmed; each says what to check. A few Kijiji/Facebook entries point to a live search page because their detail pages block automated reads. The spreadsheet is the source of truth — edit it, then regenerate this map.</div>
+  <div class="note"><b>Honest notes:</b> map pins are exact where an address was given, otherwise a neighbourhood centroid (so a few sit at the area's middle). Drive times are estimates — confirm in Google Maps at your real commute time. Several new room leads still need parking / internet / July start confirmed; each says what to check. A few Kijiji/Facebook entries point to a live search page because their detail pages block automated reads. The spreadsheet is the source of truth — edit it, then hit Refresh data.</div>
 </div>
 
 <footer>OIART Rental Finder · built on your team's methodology & cleaned data · 61 leads · London, Ontario</footer>
 
-<script>
-/* ============================================================================
-   LIVE DATA — reads from a shared Google Sheet at runtime (no hard-coded rows).
-   ----------------------------------------------------------------------------
-   [NEEDS OWNER] Paste your Google Sheet ID between the quotes below.
-   The Sheet ID is the long string in the Sheet URL between /d/ and /edit :
-     https://docs.google.com/spreadsheets/d/THIS_IS_THE_ID/edit
-   The Sheet must be shared:  Share > General access > Anyone with the link > Viewer.
-   The Sheet needs two tabs named exactly:  listings   and   sites
-   (seed them by importing oiart_listings.csv and oiart_sites.csv).
-   ========================================================================== */
-const SHEET_ID = "1ddciH2oqLcQxEePD-AEoO4GCqI8XztRcC1YTMJxZm9s";
-const LISTINGS_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&headers=1&sheet=listings`;
-const SITES_URL    = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&headers=1&sheet=sites`;
-
-/* Optional true write-back (see the big comment block at the bottom of this file).
-   Leave "" for the default read-only mirror. Paste an Apps Script /exec URL to
-   let the trash button write Archived=TRUE straight into the Sheet. */
-const WRITE_URL = "";
-
-/* Option B fallback (only if you ever hit a CORS edge case with gviz above):
-   publish each tab as CSV (File > Share > Publish to web > tab > CSV), add
-   the PapaParse CDN script tag to <head> (unpkg.com/papaparse@5/papaparse.min.js),
-   paste the two pub?...output=csv URLs here, and call loadSheetCSV() instead.
-   const LISTINGS_CSV_URL = "";
-   const SITES_CSV_URL    = "";
-*/
-
-let rows = [];
-let sites = [];
-let neighbourhoods = [];
-let sources = [];
-
-function uniqSorted(arr){
-  return [...new Set(arr.map(v => String(v ?? "").trim()).filter(Boolean))]
-    .sort((a, b) => a.localeCompare(b));
-}
-
-// gviz wraps the JSON in google.visualization.Query.setResponse(...). Strip it,
-// then key every cell by its column header label. Use the formatted value for
-// date columns (so they read like the sheet) and the raw value for everything
-// else (so numeric precision such as lat/long is preserved).
-function parseGviz(text){
-  const json = text.slice(text.indexOf("(") + 1, text.lastIndexOf(")"));
-  const data = JSON.parse(json);
-  const cols = data.table.cols.map(c => ({ label: String(c.label || c.id || "").trim(), type: c.type }));
-  return data.table.rows.map(tr => {
-    const o = {};
-    (tr.c || []).forEach((cell, i) => {
-      const col = cols[i];
-      if(!col || !col.label) return;
-      let val = "";
-      if(cell){
-        const isDate = col.type === "date" || col.type === "datetime" || col.type === "timeofday";
-        if(isDate && cell.f != null)      val = cell.f;
-        else if(cell.v != null)           val = cell.v;
-        else if(cell.f != null)           val = cell.f;
-      }
-      o[col.label] = val;
-    });
-    return o;
-  });
-}
-
-// Recompute the helper fields the UI relies on (the CSV/Sheet does NOT contain them).
-function deriveListing(o){
-  const rent  = Number(o["Approx monthly share"]);
-  const drive = Number(o["Est drive min"]);
-  const park  = String(o["Parking"] || "");
-  const net   = String(o["Internet / utilities"] || "");
-  o.PriorityNum = Number(o["Priority"]);
-  o.ScoreNum    = Number(o["Score"]);
-  o.DriveNum    = Number(o["Est drive min"]);
-  o.RentNum     = Number(o["Approx monthly share"]);
-  o.LatNum      = Number(o["Latitude"]);
-  o.LonNum      = Number(o["Longitude"]);
-  o.UnderTarget = Number.isFinite(rent)  && rent  <= 1000;
-  o.EasyCommute = Number.isFinite(drive) && drive <= 15;
-  o.HasParking  = /yes|incl|avail|spot|driveway|assigned|surface|garage|outdoor/i.test(park) && !/no parking/i.test(park);
-  o.HasInternet = /yes|incl|all|wifi|gigabit|1gb/i.test(net);
-  o.IsNew       = String(o["IsNew"]).trim().toUpperCase() === "TRUE";
-  o.Archived    = String(o["Archived"]).trim().toUpperCase() === "TRUE";
-  return o;
-}
-
-// The sites tab uses verbose headers; alias them onto the keys the panel expects.
-function deriveSite(o){
-  o.Filters = (o["Recommended filters / search terms"] ?? o.Filters ?? "");
-  o.Avoid   = (o["Avoid / delete"] ?? o.Avoid ?? "");
-  o.IsNew   = String(o["IsNew"]).trim().toUpperCase() === "TRUE";
-  return o;
-}
-
-async function loadSheet(url, kind){
-  const res = await fetch(url, { cache: "no-store" });
-  if(!res.ok) throw new Error("HTTP " + res.status);
-  const list = parseGviz(await res.text());
-  return kind === "sites" ? list.map(deriveSite) : list.map(deriveListing);
-}
-
-// A row counts as archived if the Sheet says so OR it was archived this session.
-function isArchived(r){ return r.Archived === true || archived.has(r.ID); }
-
-const OIART = {lat:42.936, lon:-81.205};
-
-const el = id => document.getElementById(id);
-function safe(s){return String(s ?? "").replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-function num(v,f=0){const n=Number(v);return Number.isFinite(n)?n:f;}
-function volClass(r){return String(r.Volume).includes("Vol 1")?"vol1":"vol2";}
-function pillClass(r){return String(r.Volume).includes("Vol 1")?"core":"stretch";}
-function volLabel(r){return String(r.Volume).includes("Vol 1")?"Vol 1 core":"Vol 2 stretch";}
-function searchText(r){return [r["Listing / lead"],r.Neighbourhood,r["Address / locator"],r.Type,r["Why add / note"],r["What to verify"],r.Source,r["Criteria fit"]].join(" ").toLowerCase();}
-
-const state={under1000:false,parking:false,internet:false,newonly:false,sortKey:"PriorityNum",sortDir:1,view:"active"};
-let archived = new Set();
-try{ const saved=localStorage.getItem("oiart_archived"); if(saved) archived=new Set(JSON.parse(saved)); }catch(e){}
-function persist(){ try{ localStorage.setItem("oiart_archived", JSON.stringify([...archived])); }catch(e){} }
-
-// KPIs
-function renderKPIs(){
-  const v1=rows.filter(r=>String(r.Volume).includes("Vol 1")).length;
-  const v2=rows.filter(r=>String(r.Volume).includes("Vol 2")).length;
-  const nw=rows.filter(r=>r.IsNew).length;
-  const under=rows.filter(r=>r.UnderTarget).length;
-  const easy=rows.filter(r=>r.EasyCommute).length;
-  const kpis=[["green",rows.length,"Total leads"],["green",v1,"Vol 1 core fits"],["blue",v2,"Vol 2 stretch"],
-    ["gold",nw,"New this round"],["green",under,"≤ $1,000 all-in"],["green",easy,"≤ 15-min drive"]];
-  el("kpis").innerHTML=kpis.map(k=>`<div class="kpi ${k[0]}"><div class="num">${k[1]}</div><div class="label">${k[2]}</div></div>`).join("");
-}
-
-// Reset to just the "All" option, then repopulate from the live data.
-function populateSelect(id,vals){const s=el(id);s.length=1;vals.forEach(v=>{const o=document.createElement("option");o.value=v;o.textContent=v;s.appendChild(o);});}
-function populateFilters(){
-  neighbourhoods=uniqSorted(rows.map(r=>r.Neighbourhood));
-  sources=uniqSorted(rows.map(r=>r.Source));
-  populateSelect("neighbourhood",neighbourhoods);
-  populateSelect("source",sources);
-}
-
-const hasMap = (typeof L !== "undefined");
-let map=null;
-if(hasMap){
-  map=L.map("map",{scrollWheelZoom:true}).setView([42.945,-81.23],12);
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",{subdomains:"abcd",maxZoom:20,attribution:'&copy; OpenStreetMap &copy; CARTO'}).addTo(map);
-} else {
-  const md=document.getElementById("map");
-  if(md) md.innerHTML='<div style="padding:24px;font-family:Inter;color:#766b5e">Map library couldn\'t load (offline or blocked). The ranked list, table and filters below all still work. Open in a normal browser with internet to see the map.</div>';
-}
-
-function iconFor(r){
-  const cls = r==="oiart" ? "oiart" : volClass(r)+(r.IsNew?" isnew":"");
-  const label = r==="oiart" ? "★" : safe(r.Priority||r.ID);
-  return L.divIcon({className:"",html:`<div class="marker-label ${cls}">${label}</div>`,iconSize:[30,30],iconAnchor:[15,15],popupAnchor:[0,-14]});
-}
-if(hasMap){
-  L.marker([OIART.lat,OIART.lon],{icon:iconFor("oiart"),zIndexOffset:1000}).bindPopup("<h3>OIART</h3><b>502 Newbold St, London ON</b><br>5 km and 10 km rings shown.").addTo(map);
-  L.circle([OIART.lat,OIART.lon],{radius:5000,color:"#2f6f57",weight:2,fillOpacity:.03}).addTo(map);
-  L.circle([OIART.lat,OIART.lon],{radius:10000,color:"#315f87",weight:2,fillOpacity:.02}).addTo(map);
-}
-
-let markers=[], markerById={};
-function popup(r){
-  return `<h3>${safe(r.Priority)}. ${safe(r["Listing / lead"])}</h3>
-  <span class="pill ${pillClass(r)}">${volLabel(r)}</span><span class="pill scorepill">Score ${safe(r.Score)}/100</span>${r.IsNew?'<span class="pill newpill">★ new</span>':''}<br>
-  <b>Area:</b> ${safe(r.Neighbourhood)}<br><b>Locator:</b> ${safe(r["Address / locator"])}<br>
-  <b>Type:</b> ${safe(r.Type)}<br><b>Rent:</b> ${safe(r["Rent text"])}<br>
-  <b>Drive:</b> ${safe(r["Est drive min"])} min · <b>Parking:</b> ${safe(r.Parking)}<br>
-  <b>Internet/util:</b> ${safe(r["Internet / utilities"])}<br>
-  <p style="margin:6px 0"><b>Why:</b> ${safe(r["Why add / note"])}</p>
-  <p style="margin:6px 0"><b>Verify:</b> ${safe(r["What to verify"])}</p>
-  <div class="links"><a class="linkbtn" href="${safe(r.URL)}" target="_blank">Listing / search</a><a class="linkbtn route" href="${safe(r["Maps link"])}" target="_blank">Route to OIART</a></div>`;
-}
-function card(r){
-  const arch=isArchived(r);
-  const action = arch
-    ? `<button class="restorebtn" data-restore="${safe(r.ID)}">↩ Restore</button>`
-    : `<button class="trash" data-trash="${safe(r.ID)}" title="Archive (remove from active list + map)">🗑</button>`;
-  const seen = r["Date seen"] ? `seen ${safe(r["Date seen"])}` : "";
-  const chk = r["Last checked"] ? ` · checked ${safe(r["Last checked"])}` : "";
-  return `<div class="card" data-id="${safe(r.ID)}">
-  <div class="cardhead"><div class="pills"><span class="pill ${pillClass(r)}">${volLabel(r)}</span><span class="pill scorepill">#${safe(r.Priority)} · ${safe(r.Score)}</span>${r.IsNew?'<span class="pill newpill">★ new</span>':''}</div>${action}</div>
-  <h3>${safe(r["Listing / lead"])}</h3>
-  <div class="meta">${safe(r.Neighbourhood)} · ${safe(r["Address / locator"])}</div>
-  <div class="rent">${safe(r["Rent text"])} <span class="meta" style="font-weight:500">· ~${safe(r["Est drive min"])} min</span></div>
-  <div class="meta">${safe(r["Why add / note"])}</div>
-  <div class="meta" style="margin-top:4px;font-size:11.5px">${seen}${chk}</div>
-  <div class="links"><a class="linkbtn" href="${safe(r.URL)}" target="_blank">Listing</a><a class="linkbtn route" href="${safe(r["Maps link"])}" target="_blank">Route</a></div>
-  </div>`;
-}
-function filtered(){
-  const q=el("search").value.trim().toLowerCase();
-  const vol=el("volume").value, neigh=el("neighbourhood").value, src=el("source").value;
-  const drive=el("drive").value?Number(el("drive").value):null;
-  let list=rows.filter(r=>{
-    const isArch=isArchived(r);
-    if(state.view==="active" && isArch) return false;
-    if(state.view==="archived" && !isArch) return false;
-    if(q && !searchText(r).includes(q)) return false;
-    if(vol && !String(r.Volume).includes(vol)) return false;
-    if(neigh && r.Neighbourhood!==neigh) return false;
-    if(src && r.Source!==src) return false;
-    if(drive!==null && num(r.DriveNum,999)>drive) return false;
-    if(state.under1000 && !r.UnderTarget) return false;
-    if(state.parking && !r.HasParking) return false;
-    if(state.internet && !r.HasInternet) return false;
-    if(state.newonly && !r.IsNew) return false;
-    return true;
-  });
-  const k=state.sortKey, dir=state.sortDir;
-  list.sort((a,b)=>{
-    let av=a[k], bv=b[k];
-    if(typeof av==="number"||k.endsWith("Num")){av=num(av,1e9);bv=num(bv,1e9);return (av-bv)*dir;}
-    return String(av).localeCompare(String(bv))*dir;
-  });
-  return list;
-}
-function render(){
-  const list=filtered();
-  el("count").textContent=`(${list.length} shown)`;
-  if(hasMap){
-    markers.forEach(m=>map.removeLayer(m)); markers=[]; markerById={};
-    const bounds=[];
-    list.forEach(r=>{
-      const lat=num(r.LatNum,NaN), lon=num(r.LonNum,NaN);
-      if(!Number.isFinite(lat)||!Number.isFinite(lon)) return;
-      const m=L.marker([lat,lon],{icon:iconFor(r)}).bindPopup(popup(r)).addTo(map);
-      markers.push(m); markerById[r.ID]=m; bounds.push([lat,lon]);
-    });
-    if(bounds.length){bounds.push([OIART.lat,OIART.lon]);map.fitBounds(bounds,{padding:[40,40],maxZoom:13});}
-  }
-  el("cards").innerHTML=list.map(card).join("");
-  document.querySelectorAll(".card").forEach(c=>c.addEventListener("click",(ev)=>{
-    if(ev.target.closest(".trash")||ev.target.closest(".restorebtn")||ev.target.closest("a")) return;
-    if(!hasMap) return;
-    const m=markerById[c.dataset.id]; if(m){map.setView(m.getLatLng(),14,{animate:true});m.openPopup();}
-  }));
-  document.querySelectorAll("[data-trash]").forEach(b=>b.addEventListener("click",()=>{
-    const id=b.dataset.trash;
-    archived.add(id); persist(); render();
-    if(WRITE_URL){ writeCell(id,"Archived","TRUE"); }
-    else { toast(`Archived ${id} for this session. To make it stick for everyone, set Archived = TRUE for ${id} in the Sheet, then hit ↻ Refresh.`); }
-  }));
-  document.querySelectorAll("[data-restore]").forEach(b=>b.addEventListener("click",()=>{
-    const rid=b.dataset.restore;
-    archived.delete(rid); persist(); render();
-    if(WRITE_URL){ writeCell(rid,"Archived","FALSE"); }
-  }));
-  const ab=el("archivebar");
-  if(state.view==="archived"){ const nArch=rows.filter(isArchived).length; ab.classList.add("show"); ab.textContent = nArch ? `${nArch} archived listing(s). Click Restore to bring one back. Archived leads are hidden from the map and Active list.` : "No archived listings yet. Use the 🗑 icon on a card to archive dead or unwanted leads."; }
-  else ab.classList.remove("show");
-  el("tbody").innerHTML=list.map(r=>`<tr class="${r.IsNew?'rownew':''}">
-    <td><b>${safe(r.Priority)}</b></td>
-    <td><b>${safe(r["Listing / lead"])}</b><br><span class="meta">${safe(r["Address / locator"])} · ${safe(r.Type)}</span><br><span class="meta" style="font-size:11px">seen ${safe(r["Date seen"])} · checked ${safe(r["Last checked"])}</span></td>
-    <td><span class="pill ${pillClass(r)}">${volLabel(r)}</span></td>
-    <td>${safe(r.Neighbourhood)}</td>
-    <td><b>${safe(r["Rent text"])}</b><br><span class="meta">share ${safe(r["Approx monthly share"])}</span></td>
-    <td>${safe(r["Est drive min"])} min<br><span class="meta">${safe(r["Km straight-line"])} km</span></td>
-    <td><b>${safe(r.Score)}</b></td>
-    <td>${safe(r.Parking)}</td>
-    <td>${safe(r["Internet / utilities"])}</td>
-    <td><div class="links"><a class="linkbtn" href="${safe(r.URL)}" target="_blank">Listing</a><a class="linkbtn route" href="${safe(r["Maps link"])}" target="_blank">Route</a></div></td>
-  </tr>`).join("");
-}
-// sites grouped by category
-function renderSites(){
-  const order=["Aggregator","MLS","Roommate","Student","Student/Local","Local landlord","Social","Niche"];
-  const groups={};
-  sites.forEach(s=>{(groups[s.Category]=groups[s.Category]||[]).push(s);});
-  const cats=Object.keys(groups).sort((a,b)=>{const ia=order.indexOf(a),ib=order.indexOf(b);return (ia<0?99:ia)-(ib<0?99:ib);});
-  let html="";
-  cats.forEach(cat=>{
-    html+=`<div class="sitegroup"><h3>${safe(cat)} · ${groups[cat].length}</h3><div class="sitegrid">`;
-    html+=groups[cat].map(s=>`<div class="sitecard ${s.IsNew?'new':''}">
-      <h3>${safe(s.Source)}${s.IsNew?' <span class="pill newpill">new</span>':''}</h3>
-      <div class="role">${safe(s["Use for"])}</div>
-      <div class="f"><b>Filters:</b> ${safe(s.Filters)}</div>
-      <div class="f"><b>Keep:</b> ${safe(s.Keep)}</div>
-      <div class="f"><b>Avoid:</b> ${safe(s.Avoid)}</div>
-    </div>`).join("");
-    html+=`</div></div>`;
-  });
-  el("sites").innerHTML=html;
-}
-
-["search","volume","neighbourhood","source","drive"].forEach(id=>el(id).addEventListener("input",render));
-function toggle(id,key){el(id).onclick=()=>{state[key]=!state[key];el(id).classList.toggle("active",state[key]);render();};}
-toggle("under1000","under1000");toggle("parking","parking");toggle("internet","internet");toggle("newonly","newonly");
-el("tabActive").onclick=()=>{state.view="active";el("tabActive").classList.add("active");el("tabArchived").classList.remove("active");render();};
-el("tabArchived").onclick=()=>{state.view="archived";el("tabArchived").classList.add("active");el("tabActive").classList.remove("active");render();};
-el("reset").onclick=()=>{state.under1000=state.parking=state.internet=state.newonly=false;
-  ["under1000","parking","internet","newonly"].forEach(id=>el(id).classList.remove("active"));
-  ["search","volume","neighbourhood","source","drive"].forEach(id=>el(id).value="");
-  state.sortKey="PriorityNum";state.sortDir=1;render();};
-document.querySelectorAll("th[data-k]").forEach(th=>th.addEventListener("click",()=>{
-  const k=th.dataset.k;
-  if(state.sortKey===k) state.sortDir*=-1; else {state.sortKey=k;state.sortDir=1;}
-  document.querySelectorAll("th .arr").forEach(a=>a.remove());
-  const arr=document.createElement("span");arr.className="arr";arr.textContent=state.sortDir>0?" ▼":" ▲";th.appendChild(arr);
-  render();
-}));
-
-/* ============================ live data orchestration ====================== */
-function setStatus(msg, kind){
-  const s=el("dataStatus"); if(!s) return;
-  if(!msg){ s.style.display="none"; return; }
-  const palette={ok:["#e2efe8","#2f6f57"],warn:["#fbf0dc","#8c551b"],err:["#fbe4de","#9d3e2f"],"":["#e0eaf4","#315f87"]};
-  const c=palette[kind||""]||palette[""];
-  s.style.cssText=`display:block;margin:0 0 16px;padding:11px 15px;border-radius:12px;font:500 13px Inter,sans-serif;background:${c[0]};color:${c[1]};border:1px solid rgba(0,0,0,.06);`;
-  s.textContent=msg;
-}
-
-let toastTimer=null;
-function toast(msg){
-  let t=el("toast");
-  if(!t){ t=document.createElement("div"); t.id="toast";
-    t.style.cssText="position:fixed;left:50%;bottom:24px;transform:translateX(-50%);max-width:90vw;background:#2b2620;color:#fff;padding:12px 18px;border-radius:12px;font:500 13.5px Inter,sans-serif;box-shadow:0 10px 30px rgba(0,0,0,.25);z-index:3000;opacity:0;transition:opacity .2s;";
-    document.body.appendChild(t);
-  }
-  t.textContent=msg; t.style.opacity="1";
-  clearTimeout(toastTimer); toastTimer=setTimeout(()=>{t.style.opacity="0";},6500);
-}
-
-async function writeCell(id, field, value){
-  if(!WRITE_URL) return;
-  try{
-    await fetch(WRITE_URL,{method:"POST",body:JSON.stringify({id,field,value})}); // text/plain body avoids CORS preflight
-    toast(`Saved ${field}=${value} for ${id} to the Sheet.`);
-  }catch(e){ toast(`Couldn't write to the Sheet (${e.message}). Set ${field}=${value} for ${id} manually.`); }
-}
-
-function applyData(d){
-  rows = (d && d.rows) || [];
-  sites = (d && d.sites) || [];
-  renderKPIs(); populateFilters(); renderSites(); render();
-}
-function cacheSave(){ try{ localStorage.setItem("oiart_cache", JSON.stringify({rows,sites,ts:Date.now()})); }catch(e){} }
-function cacheLoad(){ try{ const c=JSON.parse(localStorage.getItem("oiart_cache")); if(c && Array.isArray(c.rows)) return c; }catch(e){} return null; }
-
-async function init(){
-  if(SHEET_ID==="PASTE_SHEET_ID_HERE"){
-    const cached=cacheLoad();
-    if(cached){ applyData(cached); setStatus(`No Sheet ID set yet — showing a cached copy from ${new Date(cached.ts).toLocaleString()}. Paste your SHEET_ID in index.html to go live.`,"warn"); }
-    else { applyData({rows:[],sites:[]}); setStatus("No Sheet ID configured yet. Open index.html, set SHEET_ID to your Google Sheet's ID, then reload.","warn"); }
-    return;
-  }
-  setStatus("Loading the latest data from the Google Sheet…","");
-  try{
-    const [r,s]=await Promise.all([loadSheet(LISTINGS_URL,"listings"), loadSheet(SITES_URL,"sites")]);
-    applyData({rows:r,sites:s}); cacheSave();
-    setStatus(`Live — ${r.length} listings loaded from the Sheet at ${new Date().toLocaleTimeString()}.`,"ok");
-    setTimeout(()=>setStatus("",""),4000);
-  }catch(e){
-    const cached=cacheLoad();
-    if(cached){ applyData(cached); setStatus(`Couldn't reach the Sheet (${e.message}). Showing the last cached copy from ${new Date(cached.ts).toLocaleString()}.`,"warn"); }
-    else { applyData({rows:[],sites:[]}); setStatus(`Couldn't load data from the Sheet (${e.message}) and there's no cached copy. Check the Sheet ID and that sharing is "Anyone with the link · Viewer".`,"err"); }
-  }
-}
-
-const refreshBtn=el("refresh");
-if(refreshBtn) refreshBtn.onclick=()=>init();
-init();
-
-/* ============================================================================
-   OPTIONAL TRUE WRITE-BACK MODULE  (off by default — read-only mirror ships now)
-   ----------------------------------------------------------------------------
-   By default this tool is a READ-ONLY mirror: both people edit the Google Sheet
-   directly (that's the shared database), and the trash button only flips a row
-   for the current browser session + reminds you to set Archived=TRUE in the Sheet.
-   GitHub Pages is static hosting and cannot write files, and the browser can't
-   write the Sheet without exposing Google credentials — so the Sheet stays the
-   single writable surface.
-
-   If the owner WANTS the trash button to write straight into the Sheet, deploy a
-   tiny Apps Script web app bound to the Sheet and paste its /exec URL into the
-   WRITE_URL constant near the top of this file. No other change is needed — the
-   trash/restore handlers already call writeCell() when WRITE_URL is set.
-
-   Steps:
-   1. In the Sheet:  Extensions > Apps Script.  Paste the function below.
-   2. Deploy > New deployment > Web app.
-        Execute as: Me (the owner).   Who has access: Anyone.
-   3. Copy the resulting /exec URL into:  const WRITE_URL = "...";  (top of file).
-
-   function doPost(e){
-     var p = JSON.parse(e.postData.contents);            // {id, field, value}
-     var sh = SpreadsheetApp.getActive().getSheetByName('listings');
-     var data = sh.getDataRange().getValues();
-     var header = data[0];
-     var idCol = header.indexOf('ID');
-     var fCol  = header.indexOf(p.field);
-     for (var r = 1; r < data.length; r++){
-       if (String(data[r][idCol]) === String(p.id)){
-         sh.getRange(r + 1, fCol + 1).setValue(p.value);
-         return ContentService.createTextOutput(JSON.stringify({ok:true}))
-                              .setMimeType(ContentService.MimeType.JSON);
-       }
-     }
-     return ContentService.createTextOutput(JSON.stringify({ok:false, err:'id not found'}))
-                          .setMimeType(ContentService.MimeType.JSON);
-   }
-   ========================================================================== */
-</script>
+<script src="app.js"></script>
 </body>
 </html>
