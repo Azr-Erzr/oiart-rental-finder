@@ -19,6 +19,11 @@ const SHEET_TAB_CANDIDATES = {
    let workflow edits write straight into the Sheet. */
 const WRITE_URL = "https://script.google.com/macros/s/AKfycbxOqmjH0VJ_K-sgKEWkoSP_PVeWVhkhW2O8ITX6UdLg3sbHvXzBj-pKumpLsdzFjuK7/exec";
 const UPDATED_BY = "OIART site";
+/* Optional shared secret to stop drive-by writes to the open Apps Script endpoint.
+   Leave "" to keep the current behaviour. To turn it on: pick any random string,
+   paste the SAME value here and into WRITE_TOKEN in apps-script/OIART_WRITEBACK.gs,
+   then redeploy the web app. When both match, writes without the token are rejected. */
+const WRITE_TOKEN = "";
 const CSV_FALLBACKS = {
   listings: "oiart_listings.csv",
   sites: "oiart_sites.csv"
@@ -37,7 +42,8 @@ const WRITABLE_FIELDS = [
   "Archived","Status","Contacted","LastContacted","Response","ViewingBooked",
   "ViewingDate","Decision","RemoveReason","FriendNotes","ParkingConfirmed",
   "InternetConfirmed","AddressConfirmed","JulyConfirmed","ScamRisk",
-  "UpdatedAt","UpdatedBy","ListingKind","ImageURL","ImageAlt","ImageSource","ImageChecked"
+  "UpdatedAt","UpdatedBy","ListingKind","DuplicateOf","CanonicalKey",
+  "ImageURL","ImageAlt","ImageSource","ImageChecked"
 ];
 
 /* Option B fallback (only if you ever hit a CORS edge case with gviz above):
@@ -160,6 +166,166 @@ async function loadCsv(path, kind){
   return kind === "sites" ? list.map(deriveSite) : list.map(deriveListing);
 }
 
+/* ---- computed scoring (mirrors the memory-file rubric, §6) ----------------
+   Total 100 = location/commute 30 + cost 20 + parking&internet 15 +
+   privacy 15 + lease timing 10 + trust 10. Scores are derived in-app from the
+   sheet fields so they stay live: edit rent/drive/parking and the score moves.
+   A manual "ScoreOverride" column (if present and numeric) wins, so anything you
+   hand-tune is preserved. The sheet's original "Score" is kept for comparison. */
+const CORE_AREAS = /pond mills|glen cairn|deveron|frontenac|commissioners|white oaks|jalna|ernest|exeter|bradley|ashley|millbank|westminster|southdale|adelaide|wellington|highland|wilkins|base ?line|gordon|southcrest/i;
+const STRETCH_AREAS = /old south|wortley|grand ave|ridout|brighton|winston|westmount|wonderland|garden vista|byron|lambeth|longwoods|springbank/i;
+const AVOID_AREAS = /fanshawe|carling|masonville|huron heights|north london|downtown/i;
+
+function areaTier(r){
+  const hay = compact([r.Neighbourhood, r["Address / locator"]]).toLowerCase();
+  if(AVOID_AREAS.test(hay)) return "avoid";
+  if(CORE_AREAS.test(hay))  return "core";
+  if(STRETCH_AREAS.test(hay)) return "stretch";
+  return "unknown";
+}
+
+/* Graduated, honest scoring. Each component returns either points it earned
+   (rewarding what the listing actually states) OR na:true when the listing is
+   silent on it. N/A components are EXCLUDED from the maths (so a missing field
+   doesn't fake-penalise) and instead surfaced as an orange "confirm" flag.
+   Stated negatives (no parking, September start, shared bedroom) score low and
+   show a red flag. Total = earned / (sum of known maxes) * 100, so it's always
+   "of what we actually know, here's the fit." */
+const SCORE_SHORT = {
+  location:"commute", cost:"rent", parking:"parking", internet:"internet",
+  privacy:"room type", lease:"lease timing", trust:"listing"
+};
+
+function computeScore(r){
+  const comps = [];
+  const push = (key, label, max, res) => {
+    if(res.na) comps.push({key, label, max, earned:0, na:true, level:"na", note:res.note || (label + " not stated")});
+    else comps.push({key, label, max, earned:Math.max(0, Math.min(max, res.pts)), na:false, level:res.level || "ok", note:res.note || ""});
+  };
+
+  // Location + commute /30
+  push("location", "Location / commute", 30, (function(){
+    const tier = areaTier(r), d = r.DriveNum;
+    if(!Number.isFinite(d) && tier === "unknown") return {na:true, note:"Commute / area not stated"};
+    let pts, note = "";
+    if(Number.isFinite(d)){
+      if(d <= 10) pts = 30; else if(d <= 15) pts = 26; else if(d <= 20) pts = 18; else if(d <= 25) pts = 12; else pts = 8;
+    } else {
+      pts = tier === "core" ? 24 : tier === "stretch" ? 18 : 10; note = "drive estimated from area";
+    }
+    if(tier === "avoid") pts = Math.min(pts, 14);
+    else if(tier === "stretch" && pts > 26) pts = 26;
+    return {pts, level: pts <= 12 ? "warn" : "ok", note};
+  })());
+
+  // Cost + all-in value /20
+  push("cost", "Cost / all-in value", 20, (function(){
+    const rent = r.RentNum;
+    if(!Number.isFinite(rent)) return {na:true, note:"Rent / monthly share not stated"};
+    const allIn = r.HasInternet || /all|incl/i.test(asText(r["Internet / utilities"]));
+    let pts;
+    if(rent <= 900) pts = allIn ? 20 : 18;
+    else if(rent <= 1000) pts = allIn ? 19 : 16;
+    else if(rent <= 1150) pts = 14;
+    else if(rent <= 1300) pts = 11;
+    else if(rent <= 1500) pts = 8;
+    else if(rent <= 1800) pts = 5;
+    else pts = 3;
+    return {pts, level: rent > 1500 ? "warn" : "ok"};
+  })());
+
+  // Parking /10 (rubric's parking+internet 15, split 10/5 so each can be N/A)
+  push("parking", "Parking", 10, (function(){
+    const t = asText(r.Parking).toLowerCase();
+    if(truthy(r.ParkingConfirmed) || r.HasParking) return {pts:10, note:"parking available"};
+    if(/no parking|street only|no spot|no on-?site|unavailable|not included/.test(t)) return {pts:0, level:"bad", note:"No parking"};
+    if(/extra|paid|\$|fee/.test(t)) return {pts:7, level:"warn", note:"paid parking"};
+    return {na:true, note:"Parking not confirmed"};
+  })());
+
+  // Internet / utilities /5
+  push("internet", "Internet / utilities", 5, (function(){
+    const t = asText(r["Internet / utilities"]).toLowerCase();
+    if(truthy(r.InternetConfirmed) || r.HasInternet || /all|incl/.test(t)) return {pts:5, note:"included"};
+    if(/partial|some|hydro/.test(t)) return {pts:3, level:"warn", note:"partial"};
+    if(/no internet|not included|extra/.test(t)) return {pts:2, level:"warn", note:"internet extra"};
+    return {na:true, note:"Internet / utilities not confirmed"};
+  })());
+
+  // Privacy + housing type /15
+  push("privacy", "Privacy / housing type", 15, (function(){
+    const t = compact([r.Type, r["Criteria fit"]]).toLowerCase();
+    if(!t) return {na:true, note:"Housing type not stated"};
+    if(/basement|studio|bachelor|1-?bed|one bed|apartment|ensuite|en-suite|own bath|private bath|separate entrance/.test(t)) return {pts:15, note:"private unit / own bath"};
+    if(/shared bedroom|shared room/.test(t)) return {pts:5, level:"bad", note:"Shared bedroom"};
+    if(/private (room|bed)/.test(t)) return {pts:12, note:"private room"};
+    if(/room/.test(t)) return {pts:11, note:"room in shared house"};
+    return {pts:8, note:"type unclear"};
+  })());
+
+  // Lease timing + student fit /10 — graduated on what's actually stated; N/A if silent
+  push("lease", "Lease timing / fit", 10, (function(){
+    if(truthy(r.JulyConfirmed)) return {pts:10, note:"July confirmed"};
+    const t = compact([r.Availability, r["What to verify"]]).toLowerCase();
+    if(/12[\s-]*month|year lease|12\s*mo|july[^.]{0,20}july/.test(t)) return {pts:10, note:"12-month / July-to-July"};
+    if(/late july|july/.test(t)) return {pts:9, note:"July start stated"};
+    if(/flexible|negotiable|any time|anytime/.test(t)) return {pts:7, note:"flexible start"};
+    if(/now|immediate|available now|asap|current|move-?in/.test(t)) return {pts:7, note:"available now"};
+    if(/aug/.test(t)) return {pts:6, note:"August start"};
+    if(/sept/.test(t)) return {pts:4, level:"bad", note:"September start"};
+    return {na:true, note:"Lease timing not stated — confirm"};
+  })());
+
+  // Trust / clarity / quality /10 — always assessable
+  push("trust", "Trust / clarity", 10, (function(){
+    let pts = 10; const notes = [];
+    const kind = String(r.ListingKind || "").toLowerCase();
+    const risk = asText(r.ScamRisk).toLowerCase();
+    if(/high/.test(risk)){ pts -= 6; notes.push("high scam risk"); }
+    else if(/med/.test(risk)){ pts -= 3; notes.push("medium scam risk"); }
+    if(/search|needs/.test(kind)){ pts -= 3; notes.push("no direct listing URL"); }
+    const addr = asText(r["Address / locator"]).toLowerCase();
+    if(!addr || /area only|approx|unknown/.test(addr)){ pts -= 2; notes.push("no exact address"); }
+    if(!listingImageUrl(r)) pts -= 1;
+    if(pts < 0) pts = 0;
+    return {pts, level: pts <= 4 ? "bad" : "ok", note:notes.join(", ")};
+  })());
+
+  const known = comps.filter(c => !c.na);
+  const knownMax = known.reduce((a, c) => a + c.max, 0);
+  const earned = known.reduce((a, c) => a + c.earned, 0);
+  const total = knownMax ? Math.max(0, Math.min(100, Math.round(earned / knownMax * 100))) : 0;
+  return {
+    total,
+    components: comps,
+    unconfirmed: comps.filter(c => c.na).map(c => c.key),
+    negatives: comps.filter(c => c.level === "bad").map(c => c.key),
+    knownMax,
+    tier: areaTier(r)
+  };
+}
+
+function scoreBreakdown(r){
+  const comps = r.ScoreComponents || [];
+  const body = comps.map(c => c.na ? `${c.label} N/A` : `${c.label} ${c.earned}/${c.max}`).join(" · ");
+  let s = `Auto-score ${r.ScoreNum}/100 — ${body}`;
+  if(Number.isFinite(r.ScoreKnownMax) && r.ScoreKnownMax < 100) s += ` · scored on ${r.ScoreKnownMax}/100 known pts`;
+  if(r.ScoreComputed && Number.isFinite(r.ScoreSheet)) s += ` · (sheet had ${r.ScoreSheet})`;
+  if(!r.ScoreComputed) s += ` · manual ScoreOverride in use`;
+  return s;
+}
+
+// Orange "confirm" chips for N/A components, red chips for stated negatives.
+function scoreFlags(r){
+  const comps = r.ScoreComponents || [];
+  const chips = [];
+  comps.forEach(c => {
+    if(c.na) chips.push(`<span class="flagchip na" title="Not stated in the listing yet — contact to confirm">Confirm ${safe(SCORE_SHORT[c.key] || c.label)}</span>`);
+    else if(c.level === "bad") chips.push(`<span class="flagchip bad" title="${safe(c.note || c.label)}">${safe(c.note || c.label)}</span>`);
+  });
+  return chips.length ? `<div class="confirmflags">${chips.join("")}</div>` : "";
+}
+
 // Recompute the helper fields the UI relies on (the CSV/Sheet does NOT contain them).
 function deriveListing(o){
   const originalId = asText(o.ID);
@@ -172,7 +338,6 @@ function deriveListing(o){
   const net   = String(o["Internet / utilities"] || "");
   [...WORKFLOW_COLUMNS, ...IMAGE_COLUMNS].forEach(k => { if(o[k] == null) o[k] = ""; });
   o.PriorityNum = parseNum(o["Priority"]);
-  o.ScoreNum    = parseNum(o["Score"]);
   o.DriveNum    = parseNum(o["Est drive min"]);
   o.RentNum     = parseNum(o["Approx monthly share"]);
   o.LatNum      = parseNum(o["Latitude"]);
@@ -187,15 +352,31 @@ function deriveListing(o){
   const status   = compact([o.Status, o.Action]);
   const response = asText(o.Response);
   const decision = compact([o.Decision, status]);
-  const verify   = compact([o["What to verify"], o.Availability, o["Address / locator"], park, net]).toLowerCase();
+  // Tightened: key each "needs verify" flag off the specific topic in the
+  // "What to verify"/address/availability text, not a blanket verify/confirm
+  // match — otherwise nearly every row lit up permanently.
+  const toVerify = asText(o["What to verify"]).toLowerCase();
+  const addrText = asText(o["Address / locator"]).toLowerCase();
+  const availText = asText(o.Availability).toLowerCase();
   o.ContactedBool = truthy(o.Contacted) || /contacted|messaged|emailed|called|sent/i.test(status);
   o.WaitingReply = /waiting|pending|sent|messaged|emailed|follow/i.test(compact([status, response])) && !/booked|declined|rejected|dead|remove/i.test(compact([status, response]));
   o.ViewingBookedBool = truthy(o.ViewingBooked) || !!asText(o.ViewingDate) || /viewing|tour|showing|booked/i.test(status);
   o.GoodOption = /good|strong|shortlist|keeper|yes|priority|message first|book viewing/i.test(decision) && !/no|bad|dead|remove|scam/i.test(decision);
-  o.NeedsParking = !truthy(o.ParkingConfirmed) && (/parking|spot|driveway|surface|garage|assigned|avail|extra|verify|confirm/.test(verify) || !o.HasParking);
-  o.NeedsInternet = !truthy(o.InternetConfirmed) && (/internet|wifi|utilities|hydro|all[- ]?in|verify|confirm/.test(verify) || !o.HasInternet);
-  o.NeedsAddress = !truthy(o.AddressConfirmed) && (/area only|verify|building|exact|address|location|locator/.test(verify));
-  o.NeedsJuly = !truthy(o.JulyConfirmed) && (/july|availability|available|lease|start|term|current|verify/.test(verify));
+  o.NeedsParking  = !truthy(o.ParkingConfirmed)  && (!o.HasParking  || /park/.test(toVerify));
+  o.NeedsInternet = !truthy(o.InternetConfirmed) && (!o.HasInternet || /internet|wifi|util|hydro/.test(toVerify));
+  o.NeedsAddress  = !truthy(o.AddressConfirmed)  && (!addrText || /area only|approx|unknown|postal|n6[a-z]?\s*\d/.test(addrText) || /address|intersection|exact location/.test(toVerify));
+  o.NeedsJuly     = !truthy(o.JulyConfirmed)     && !/july/.test(availText) && (availText === "" || /sept|unknown|verify|current|now|tbd|ask/.test(availText) || /july|lease start|move-?in|term/.test(toVerify));
+  // Live computed score (manual ScoreOverride wins; sheet Score kept for compare)
+  const auto = computeScore(o);
+  const override = parseNum(o.ScoreOverride);
+  o.ScoreSheet       = parseNum(o.Score);
+  o.ScoreAuto        = auto.total;
+  o.ScoreComponents  = auto.components;
+  o.ScoreUnconfirmed = auto.unconfirmed;
+  o.ScoreNegatives   = auto.negatives;
+  o.ScoreKnownMax    = auto.knownMax;
+  o.ScoreComputed    = !Number.isFinite(override);
+  o.ScoreNum         = Number.isFinite(override) ? override : auto.total;
   return o;
 }
 
@@ -262,7 +443,7 @@ function listingKind(r){
   return /search|results|for-rent|room-rental|apartments/i.test(url) ? "Search/source lead" : "Direct listing";
 }
 function kindClass(r){
-  const k = listingKind(r).toLowerCase();
+  const k = String(r.ListingKind || listingKind(r)).toLowerCase();
   if(k.includes("direct")) return "kind-direct";
   if(k.includes("building") || k.includes("official")) return "kind-building";
   if(k.includes("needs")) return "kind-needs";
@@ -274,7 +455,7 @@ const state={
   under1000:false,parking:false,internet:false,newonly:false,
   notContacted:false,waitingReply:false,viewingBooked:false,goodOption:false,
   needsParking:false,needsInternet:false,needsAddress:false,needsJuly:false,
-  sortKey:"PriorityNum",sortDir:1,view:"active"
+  sortKey:"PriorityNum",sortDir:1,view:"active",showUnmapped:false
 };
 let archived = new Set();
 try{ const saved=localStorage.getItem("oiart_archived"); if(saved) archived=new Set(JSON.parse(saved)); }catch(e){}
@@ -290,6 +471,16 @@ function renderKPIs(){
   const kpis=[["green",rows.length,"Total leads"],["green",v1,"Vol 1 core fits"],["blue",v2,"Vol 2 stretch"],
     ["gold",nw,"New this round"],["green",under,"≤ $1,000 all-in"],["green",easy,"≤ 15-min drive"]];
   el("kpis").innerHTML=kpis.map(k=>`<div class="kpi ${k[0]}"><div class="num">${k[1]}</div><div class="label">${k[2]}</div></div>`).join("");
+}
+
+// Keep the appbar tag + footer counts in sync with the live data (no hard-coded 61).
+function updateCounts(){
+  const total=rows.length;
+  const active=rows.filter(r=>!isArchived(r)).length;
+  const tag=el("leadCountTag");
+  if(tag) tag.textContent=`London, ON · ${active} active lead${active===1?"":"s"} · scored & mapped`;
+  const fc=el("footerCount");
+  if(fc) fc.textContent=String(total);
 }
 
 // Reset to just the "All" option, then repopulate from the live data.
@@ -329,7 +520,7 @@ let hasRenderedData = false;
 function popup(r){
   return `<h3>${safe(textOr(r.Priority, r.DisplayID))}. ${safe(textOr(r["Listing / lead"], "Untitled listing"))}</h3>
   ${popupImage(r)}
-  <span class="pill ${pillClass(r)}">${volLabel(r)}</span><span class="pill scorepill">Score ${safe(textOr(r.Score))}</span><span class="pill kindpill ${kindClass(r)}">${safe(r.ListingKind)}</span>${r.IsNew?'<span class="pill newpill">★ new</span>':''}<br>
+  <span class="pill ${pillClass(r)}">${volLabel(r)}</span><span class="pill scorepill" title="${safe(scoreBreakdown(r))}">Score ${safe(r.ScoreNum)}</span><span class="pill kindpill ${kindClass(r)}">${safe(r.ListingKind)}</span>${r.IsNew?'<span class="pill newpill">★ new</span>':''}<br>
   <b>Area:</b> ${safe(textOr(r.Neighbourhood))}<br><b>Locator:</b> ${safe(textOr(r["Address / locator"]))}<br>
   <b>Type:</b> ${safe(textOr(r.Type))}<br><b>Rent:</b> ${safe(textOr(r["Rent text"]))}<br>
   <b>Drive:</b> ${safe(textOr(r["Est drive min"]))}${asText(r["Est drive min"])?" min":""} · <b>Parking:</b> ${safe(textOr(r.Parking))}<br>
@@ -357,12 +548,13 @@ function card(r){
   const rent = textOr(r["Rent text"]);
   const drive = asText(r["Est drive min"]) ? `~${safe(r["Est drive min"])} min` : "drive not entered";
   return `<div class="card${selected}" data-id="${safe(r.ID)}">
-  <div class="cardhead"><div class="pills"><span class="pill ${pillClass(r)}">${volLabel(r)}</span><span class="pill scorepill">#${safe(textOr(r.Priority, r.DisplayID))} · ${safe(textOr(r.Score, "score not entered"))}</span><span class="pill kindpill ${kindClass(r)}">${safe(r.ListingKind)}</span>${r.IsNew?'<span class="pill newpill">★ new</span>':''}${r.NeedsId?'<span class="pill warnpill">Needs ID</span>':''}</div>${action}</div>
+  <div class="cardhead"><div class="pills"><span class="pill ${pillClass(r)}">${volLabel(r)}</span><span class="pill scorepill" title="${safe(scoreBreakdown(r))}">#${safe(textOr(r.Priority, r.DisplayID))} · ${safe(r.ScoreNum)}${r.ScoreComputed && Number.isFinite(r.ScoreSheet) && r.ScoreSheet!==r.ScoreNum?` <span class="sheetcmp">(was ${safe(r.ScoreSheet)})</span>`:""}</span><span class="pill kindpill ${kindClass(r)}">${safe(r.ListingKind)}</span>${r.IsNew?'<span class="pill newpill">★ new</span>':''}${asText(r.DuplicateOf)?`<span class="pill warnpill" title="Marked as duplicate of ${safe(r.DuplicateOf)}">dup of ${safe(r.DuplicateOf)}</span>`:''}${r.NeedsId?'<span class="pill warnpill">Needs ID</span>':''}</div>${action}</div>
   <h3>${safe(textOr(r["Listing / lead"], "Untitled listing"))}</h3>
   ${imageThumb(r)}
   <div class="meta">${safe(textOr(r.Neighbourhood))} · ${safe(textOr(r["Address / locator"]))}</div>
   <div class="rent">${safe(rent)} <span class="meta" style="font-weight:500">· ${drive}</span></div>
   <div class="meta">${safe(textOr(r["Why add / note"]))}</div>
+  ${scoreFlags(r)}
   ${workflow.length ? `<div class="workmeta">${workflow.map(([k,v]) => `<span><b>${safe(k)}:</b> ${safe(v)}</span>`).join("")}</div>` : ""}
   ${workflowEditor(r)}
   <div class="meta" style="margin-top:4px;font-size:11.5px">${seen}${chk}</div>
@@ -410,6 +602,7 @@ function workflowEditor(r){
       <label>Last contacted <input data-field="LastContacted" type="text" placeholder="YYYY-MM-DD" value="${safe(r.LastContacted)}"></label>
       <label>Viewing date <input data-field="ViewingDate" type="text" placeholder="YYYY-MM-DD / time" value="${safe(r.ViewingDate)}"></label>
       <label>Scam risk <input data-field="ScamRisk" type="text" placeholder="low / medium / high" value="${safe(r.ScamRisk)}"></label>
+      <label>Duplicate of (ID) <input data-field="DuplicateOf" type="text" placeholder="e.g. A4" value="${safe(r.DuplicateOf)}"></label>
       </div>
       <div class="workflowchecks">
       ${["Contacted","ViewingBooked","ParkingConfirmed","InternetConfirmed","AddressConfirmed","JulyConfirmed"].map(f=>`<label><input data-field="${f}" type="checkbox"${checked(r[f])}> ${safe(f.replace(/([A-Z])/g," $1").trim())}</label>`).join("")}
@@ -571,7 +764,8 @@ function mapVisibleList(){
   const bounds = map.getBounds();
   return currentFilteredList.filter(r => {
     const lat=num(r.LatNum,NaN), lon=num(r.LonNum,NaN);
-    return Number.isFinite(lat) && Number.isFinite(lon) && bounds.contains([lat,lon]);
+    if(!Number.isFinite(lat) || !Number.isFinite(lon)) return state.showUnmapped;
+    return bounds.contains([lat,lon]);
   });
 }
 
@@ -644,8 +838,8 @@ function render(options={}){
     <td>${safe(textOr(r.Neighbourhood))}</td>
     <td><b>${safe(textOr(r["Rent text"]))}</b><br><span class="meta">share ${safe(textOr(r["Approx monthly share"]))}</span></td>
     <td>${safe(textOr(r["Est drive min"]))}${asText(r["Est drive min"])?" min":""}<br><span class="meta">${safe(textOr(r["Km straight-line"]))}${asText(r["Km straight-line"])?" km":""}</span></td>
-    <td><b>${safe(textOr(r.Score))}</b></td>
-    <td>${safe(textOr(r.Status || r.Action))}${r.ScamRisk?`<br><span class="meta">Scam risk: ${safe(r.ScamRisk)}</span>`:""}</td>
+    <td><b title="${safe(scoreBreakdown(r))}">${safe(r.ScoreNum)}</b>${r.ScoreComputed && Number.isFinite(r.ScoreSheet) && r.ScoreSheet!==r.ScoreNum?`<br><span class="meta">sheet ${safe(r.ScoreSheet)}</span>`:""}${(r.ScoreUnconfirmed&&r.ScoreUnconfirmed.length)?`<br><span class="meta naflag" title="Not stated yet — confirm: ${safe(r.ScoreUnconfirmed.map(k=>SCORE_SHORT[k]||k).join(', '))}">⚠ ${r.ScoreUnconfirmed.length} to confirm</span>`:""}</td>
+    <td>${safe(textOr(r.Status || r.Action))}${asText(r.DuplicateOf)?`<br><span class="meta">Dup of ${safe(r.DuplicateOf)}</span>`:""}${r.ScamRisk?`<br><span class="meta">Scam risk: ${safe(r.ScamRisk)}</span>`:""}</td>
     <td>${r.ContactedBool?"Contacted":"Not contacted"}<br><span class="meta">${safe(textOr(r.LastContacted || r.Response))}</span></td>
     <td>${safe(textOr(r.Parking))}</td>
     <td>${safe(textOr(r["Internet / utilities"]))}</td>
@@ -657,6 +851,7 @@ function render(options={}){
     if(ev.target.closest("a")||ev.target.closest("button")) return;
     updateSelection(tr.dataset.rowId, true);
   }));
+  updateCounts();
 }
 // sites grouped by category
 function renderSites(){
@@ -692,6 +887,8 @@ document.querySelectorAll("[data-filter]").forEach(btn => {
 });
 el("tabActive").onclick=()=>{state.view="active";el("tabActive").classList.add("active");el("tabArchived").classList.remove("active");render();};
 el("tabArchived").onclick=()=>{state.view="archived";el("tabArchived").classList.add("active");el("tabActive").classList.remove("active");render();};
+const showUnmappedBtn=el("showUnmapped");
+if(showUnmappedBtn) showUnmappedBtn.onclick=()=>{state.showUnmapped=!state.showUnmapped;showUnmappedBtn.classList.toggle("active",state.showUnmapped);renderLeadPanel();};
 el("reset").onclick=()=>{state.under1000=state.parking=state.internet=state.newonly=false;
   ["notContacted","waitingReply","viewingBooked","goodOption","needsParking","needsInternet","needsAddress","needsJuly"].forEach(k=>state[k]=false);
   ["under1000","parking","internet","newonly"].forEach(id=>el(id).classList.remove("active"));
@@ -706,28 +903,42 @@ document.querySelectorAll("th[data-k]").forEach(th=>th.addEventListener("click",
   render();
 }));
 
-function exportFilteredCsv(){
+function csvForRows(list){
   const baseCols = [
     "ID","Volume","Action","Priority","Listing / lead","Source","ListingKind","Neighbourhood","Address / locator",
     "Type","Rent text","Approx monthly share","Est drive min","Parking","Internet / utilities",
-    "Availability","What to verify","URL","Maps link","Score","Archived","IsNew"
+    "Availability","What to verify","URL","Maps link","Score","ScoreAuto","ScoreOverride","Archived","IsNew"
   ];
   const cols = [...baseCols, ...WORKFLOW_COLUMNS, ...IMAGE_COLUMNS];
-  const csv = [cols.join(","), ...filtered().map(r => cols.map(c => csvEscape(r[c])).join(","))].join("\n");
+  return [cols.join(","), ...list.map(r => cols.map(c => csvEscape(c === "ScoreAuto" ? r.ScoreAuto : r[c])).join(","))].join("\n");
+}
+
+function downloadCsv(csv, name){
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `oiart_filtered_${new Date().toISOString().slice(0,10)}.csv`;
+  a.download = name;
   document.body.appendChild(a);
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+function exportFilteredCsv(){
+  downloadCsv(csvForRows(filtered()), `oiart_filtered_${new Date().toISOString().slice(0,10)}.csv`);
   toast("Exported the currently filtered rows.");
+}
+
+function exportMasterCsv(){
+  downloadCsv(csvForRows(rows), `oiart_master_${new Date().toISOString().slice(0,10)}.csv`);
+  toast(`Exported all ${rows.length} listings (master CSV). Sheet 'Score' is preserved; 'ScoreAuto' holds the computed value.`);
 }
 
 const exportBtn=el("exportCsv");
 if(exportBtn) exportBtn.onclick=exportFilteredCsv;
+const masterBtn=el("downloadMaster");
+if(masterBtn) masterBtn.onclick=exportMasterCsv;
 const printBtn=el("printView");
 if(printBtn) printBtn.onclick=()=>window.print();
 
@@ -768,7 +979,8 @@ async function writeCell(id, field, value){
 async function writeFields(id, fields){
   if(!WRITE_URL) return;
   try{
-    const res = await fetch(WRITE_URL,{method:"POST",body:JSON.stringify({id,fields})}); // text/plain body avoids CORS preflight
+    const payload = WRITE_TOKEN ? {id,fields,token:WRITE_TOKEN} : {id,fields};
+    const res = await fetch(WRITE_URL,{method:"POST",body:JSON.stringify(payload)}); // text/plain body avoids CORS preflight
     const text = await res.text();
     let data = {};
     try{ data = JSON.parse(text); }catch(e){}
@@ -836,7 +1048,15 @@ async function init(){
 const refreshBtn=el("refresh");
 if(refreshBtn) refreshBtn.onclick=()=>init();
 init();
-setInterval(()=>init(), 60000);
+// Auto-refresh, but never mid-edit: an open status editor, an active form field,
+// or the copy-fallback box would otherwise get wiped by a re-render every 60s.
+function isEditing(){
+  if(document.querySelector(".workflowedit[open]")) return true;
+  if(el("copyFallback")) return true;
+  const a=document.activeElement;
+  return !!(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName));
+}
+setInterval(()=>{ if(!isEditing()) init(); }, 60000);
 
 /* ============================================================================
    OPTIONAL TRUE WRITE-BACK MODULE

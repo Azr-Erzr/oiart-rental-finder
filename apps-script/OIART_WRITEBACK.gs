@@ -16,6 +16,12 @@
 const LISTINGS_SHEET_NAME = "Listings";
 const FALLBACK_LISTINGS_SHEET_NAME = "listings";
 
+// Optional shared secret. Leave "" to accept any request (current behaviour).
+// To require it: set this to a random string, set the SAME value in app.js
+// (WRITE_TOKEN), then redeploy this web app. Requests without a matching token
+// are then rejected, which stops anonymous drive-by writes to the endpoint.
+const WRITE_TOKEN = "";
+
 const ALLOWED_FIELDS = [
   "Archived",
   "Status",
@@ -46,6 +52,9 @@ const ALLOWED_FIELDS = [
 function doPost(e) {
   try {
     const payload = JSON.parse((e && e.postData && e.postData.contents) || "{}");
+    if (WRITE_TOKEN && String(payload.token || "") !== WRITE_TOKEN) {
+      return json_({ok: false, error: "Unauthorized"});
+    }
     const id = String(payload.id || "").trim();
     const updates = payload.fields || (payload.field ? {[payload.field]: payload.value} : {});
 

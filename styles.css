@@ -16,7 +16,7 @@ a:hover{text-decoration:underline;}
 .sourcebadge{font-size:12px;font-weight:700;color:var(--blue);background:var(--blue-soft);border:1px solid #c9daea;border-radius:999px;padding:7px 11px;white-space:nowrap;}
 .sourcebadge.warn{color:#8c551b;background:var(--gold-soft);border-color:#efd3a8;}
 .sourcebadge.err{color:var(--red);background:#fbe4de;border-color:#efc6bb;}
-.appbar .dl{font-size:13px;font-weight:700;background:var(--ink);color:#fff;padding:8px 14px;border-radius:10px;}
+.appbar .dl{font-size:13px;font-weight:700;background:var(--ink);color:#fff;padding:8px 14px;border-radius:10px;border:none;cursor:pointer;font-family:inherit;}
 .appbar .dl:hover{background:var(--green);text-decoration:none;}
 .hero{max-width:1600px;margin:0 auto;padding:26px 26px 6px;}
 .hero h1{font-size:clamp(26px,4vw,40px);}
@@ -99,6 +99,14 @@ input:focus,select:focus{outline:2px solid var(--green-soft);border-color:var(--
 .viewtabs{display:inline-flex;gap:4px;background:#efe7da;border-radius:999px;padding:4px;margin-left:8px;}
 .viewtab{border:none;background:transparent;border-radius:999px;padding:6px 14px;cursor:pointer;font-weight:700;font-size:13px;color:var(--muted);font-family:inherit;}
 .viewtab.active{background:#fff;color:var(--ink);box-shadow:0 1px 4px rgba(0,0,0,.08);}
+#showUnmapped{margin-left:8px;border:1px solid var(--line);background:#fff;color:var(--muted);border-radius:999px;padding:6px 12px;cursor:pointer;font-weight:700;font-size:12.5px;font-family:inherit;}
+#showUnmapped.active{background:var(--blue);border-color:var(--blue);color:#fff;}
+.scorepill .sheetcmp{font-weight:600;opacity:.7;font-size:10px;}
+.confirmflags{display:flex;flex-wrap:wrap;gap:4px;margin:7px 0 2px;}
+.flagchip{font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:999px;border:1px solid;letter-spacing:.01em;}
+.flagchip.na{background:var(--gold-soft);color:#8c551b;border-color:#efd3a8;}
+.flagchip.bad{background:#fbe4de;color:var(--red);border-color:#efc6bb;}
+.naflag{color:#8c551b;font-weight:700;}
 .sitegroup{margin-bottom:8px;}
 .sitegroup h3{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--gold);margin:14px 0 8px;}
 .archivebar{background:var(--gold-soft);border:1px solid #efd3a8;border-radius:12px;padding:10px 14px;font-size:13px;color:#5d4223;margin-bottom:12px;display:none;}

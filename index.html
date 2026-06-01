@@ -13,10 +13,10 @@
 <body>
 <div class="appbar">
   <span class="brand">OIART Rental Finder</span>
-  <span class="tag">London, ON · 61 active leads · scored & mapped</span>
+  <span class="tag" id="leadCountTag">London, ON · scored & mapped</span>
   <span class="spacer"></span>
   <span class="sourcebadge" id="sourceBadge">Loading data...</span>
-  <a class="dl" href="OIART_rental_master_tracker_EXPANDED.xlsx" download>⬇ Excel master</a>
+  <button class="dl" id="downloadMaster" type="button" title="Download every listing (all columns) as a CSV">⬇ Export master CSV</button>
 </div>
 
 <div class="hero">
@@ -66,6 +66,7 @@
           <button class="viewtab active" id="tabActive">Active</button>
           <button class="viewtab" id="tabArchived">Archived</button>
         </div>
+        <button class="viewtab" id="showUnmapped" title="Also list filtered leads that have no map pin (no/!approx coordinates)">+ Unmapped</button>
       </div>
       <div class="sub" id="sideSub">Best fit first. Click a card to focus its pin. The trash icon archives a lead; with write-back configured, that updates the Sheet too.</div>
       <div class="archivebar" id="archivebar"></div>
@@ -108,7 +109,7 @@
   <div class="note"><b>Honest notes:</b> map pins are exact where an address was given, otherwise a neighbourhood centroid (so a few sit at the area's middle). Drive times are estimates — confirm in Google Maps at your real commute time. Several new room leads still need parking / internet / July start confirmed; each says what to check. A few Kijiji/Facebook entries point to a live search page because their detail pages block automated reads. The spreadsheet is the source of truth — edit it, then hit Refresh data.</div>
 </div>
 
-<footer>OIART Rental Finder · built on your team's methodology & cleaned data · 61 leads · London, Ontario</footer>
+<footer>OIART Rental Finder · built on your team's methodology & cleaned data · <span id="footerCount">…</span> leads · London, Ontario</footer>
 
 <script src="app.js"></script>
 </body>
