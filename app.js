@@ -457,8 +457,8 @@ function listingKind(r){
   if(host.includes("roomies.ca")) return /\/rooms\/\d+/.test(path) ? "Direct listing" : "Search/source lead";
   if(host.includes("zumper.com")){
     if(path.includes("/apartment-buildings/")) return "Building page";
-    if(path.includes("/address/") || path.includes("/apartments-for-rent/")) return "Direct listing";
-    return "Search/source lead";
+    if(path.includes("/address/")) return "Direct listing";
+    return "Search/source lead"; // /apartments-for-rent/<city>/<area>/... are filtered searches, not units
   }
   if(host.includes("apartments.com")) return path.split("/").filter(Boolean).length >= 2 ? "Building page" : "Search/source lead";
   if(host.includes("padmapper.com")) return path.split("/").filter(Boolean).length >= 3 ? "Building page" : "Search/source lead";
