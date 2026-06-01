@@ -37,7 +37,7 @@ const WRITABLE_FIELDS = [
   "Archived","Status","Contacted","LastContacted","Response","ViewingBooked",
   "ViewingDate","Decision","RemoveReason","FriendNotes","ParkingConfirmed",
   "InternetConfirmed","AddressConfirmed","JulyConfirmed","ScamRisk",
-  "UpdatedAt","UpdatedBy","ImageURL","ImageAlt","ImageSource","ImageChecked"
+  "UpdatedAt","UpdatedBy","ListingKind","ImageURL","ImageAlt","ImageSource","ImageChecked"
 ];
 
 /* Option B fallback (only if you ever hit a CORS edge case with gviz above):
@@ -181,6 +181,7 @@ function deriveListing(o){
   o.EasyCommute = Number.isFinite(drive) && drive <= 15;
   o.HasParking  = /yes|incl|avail|spot|driveway|assigned|surface|garage|outdoor/i.test(park) && !/no parking/i.test(park);
   o.HasInternet = /yes|incl|all|wifi|gigabit|1gb/i.test(net);
+  o.ListingKind = listingKind(o);
   o.IsNew       = String(o["IsNew"]).trim().toUpperCase() === "TRUE";
   o.Archived    = String(o["Archived"]).trim().toUpperCase() === "TRUE";
   const status   = compact([o.Status, o.Action]);
@@ -237,7 +238,37 @@ function num(v,f=0){const n=Number(v);return Number.isFinite(n)?n:f;}
 function volClass(r){return String(r.Volume).includes("Vol 1")?"vol1":String(r.Volume).includes("Vol 2")?"vol2":"unknownvol";}
 function pillClass(r){return String(r.Volume).includes("Vol 1")?"core":String(r.Volume).includes("Vol 2")?"stretch":"unknownpill";}
 function volLabel(r){return String(r.Volume).includes("Vol 1")?"Vol 1 core":String(r.Volume).includes("Vol 2")?"Vol 2 stretch":"Volume not set";}
-function searchText(r){return [r["Listing / lead"],r.Neighbourhood,r["Address / locator"],r.Type,r["Why add / note"],r["What to verify"],r.Source,r["Criteria fit"],r.Status,r.Response,r.Decision,r.FriendNotes,r.RemoveReason].join(" ").toLowerCase();}
+function listingKind(r){
+  const manual = asText(r.ListingKind || r["Listing kind"] || r["Listing type"]);
+  if(manual) return manual;
+  const url = safeUrl(r.URL);
+  const hay = compact([r.Status, r.Action, r.Decision, r.RemoveReason, r["What to verify"], r.Source, r.URL]).toLowerCase();
+  if(/needs direct|verify url|direct listing url|needs url/.test(hay) || !url) return "Needs direct URL";
+  let u;
+  try{ u = new URL(url); }catch(e){ return "Needs direct URL"; }
+  const host = u.hostname.toLowerCase();
+  const path = u.pathname.toLowerCase();
+  if(host.includes("kijiji.ca")) return path.includes("/v-") ? "Direct listing" : "Search/source lead";
+  if(host.includes("roomies.ca")) return /\/rooms\/\d+/.test(path) ? "Direct listing" : "Search/source lead";
+  if(host.includes("zumper.com")){
+    if(path.includes("/apartment-buildings/")) return "Building page";
+    if(path.includes("/address/") || path.includes("/apartments-for-rent/")) return "Direct listing";
+    return "Search/source lead";
+  }
+  if(host.includes("apartments.com")) return path.split("/").filter(Boolean).length >= 2 ? "Building page" : "Search/source lead";
+  if(host.includes("padmapper.com")) return path.split("/").filter(Boolean).length >= 3 ? "Building page" : "Search/source lead";
+  if(host.includes("realtor.ca") || host.includes("rentals.ca")) return path.includes("map") || u.search ? "Search/source lead" : "Direct listing";
+  if(host.includes("oiart.org")) return "Official housing page";
+  return /search|results|for-rent|room-rental|apartments/i.test(url) ? "Search/source lead" : "Direct listing";
+}
+function kindClass(r){
+  const k = listingKind(r).toLowerCase();
+  if(k.includes("direct")) return "kind-direct";
+  if(k.includes("building") || k.includes("official")) return "kind-building";
+  if(k.includes("needs")) return "kind-needs";
+  return "kind-source";
+}
+function searchText(r){return [r["Listing / lead"],r.Neighbourhood,r["Address / locator"],r.Type,r["Why add / note"],r["What to verify"],r.Source,r["Criteria fit"],r.Status,r.Response,r.Decision,r.FriendNotes,r.RemoveReason,r.ListingKind].join(" ").toLowerCase();}
 
 const state={
   under1000:false,parking:false,internet:false,newonly:false,
@@ -293,10 +324,12 @@ if(hasMap){
 }
 
 let markers=[], markerById={}, currentFilteredList=[];
+let selectedListingId = "";
+let hasRenderedData = false;
 function popup(r){
   return `<h3>${safe(textOr(r.Priority, r.DisplayID))}. ${safe(textOr(r["Listing / lead"], "Untitled listing"))}</h3>
   ${popupImage(r)}
-  <span class="pill ${pillClass(r)}">${volLabel(r)}</span><span class="pill scorepill">Score ${safe(textOr(r.Score))}</span>${r.IsNew?'<span class="pill newpill">★ new</span>':''}<br>
+  <span class="pill ${pillClass(r)}">${volLabel(r)}</span><span class="pill scorepill">Score ${safe(textOr(r.Score))}</span><span class="pill kindpill ${kindClass(r)}">${safe(r.ListingKind)}</span>${r.IsNew?'<span class="pill newpill">★ new</span>':''}<br>
   <b>Area:</b> ${safe(textOr(r.Neighbourhood))}<br><b>Locator:</b> ${safe(textOr(r["Address / locator"]))}<br>
   <b>Type:</b> ${safe(textOr(r.Type))}<br><b>Rent:</b> ${safe(textOr(r["Rent text"]))}<br>
   <b>Drive:</b> ${safe(textOr(r["Est drive min"]))}${asText(r["Est drive min"])?" min":""} · <b>Parking:</b> ${safe(textOr(r.Parking))}<br>
@@ -307,6 +340,7 @@ function popup(r){
 }
 function card(r){
   const arch=isArchived(r);
+  const selected = String(selectedListingId) === String(r.ID) ? " selectedcard" : "";
   const action = arch
     ? `<button class="restorebtn" data-restore="${safe(r.ID)}">↩ Restore</button>`
     : r.NeedsId
@@ -322,8 +356,8 @@ function card(r){
   ].filter(x => asText(x[1]));
   const rent = textOr(r["Rent text"]);
   const drive = asText(r["Est drive min"]) ? `~${safe(r["Est drive min"])} min` : "drive not entered";
-  return `<div class="card" data-id="${safe(r.ID)}">
-  <div class="cardhead"><div class="pills"><span class="pill ${pillClass(r)}">${volLabel(r)}</span><span class="pill scorepill">#${safe(textOr(r.Priority, r.DisplayID))} · ${safe(textOr(r.Score, "score not entered"))}</span>${r.IsNew?'<span class="pill newpill">★ new</span>':''}${r.NeedsId?'<span class="pill warnpill">Needs ID</span>':''}</div>${action}</div>
+  return `<div class="card${selected}" data-id="${safe(r.ID)}">
+  <div class="cardhead"><div class="pills"><span class="pill ${pillClass(r)}">${volLabel(r)}</span><span class="pill scorepill">#${safe(textOr(r.Priority, r.DisplayID))} · ${safe(textOr(r.Score, "score not entered"))}</span><span class="pill kindpill ${kindClass(r)}">${safe(r.ListingKind)}</span>${r.IsNew?'<span class="pill newpill">★ new</span>':''}${r.NeedsId?'<span class="pill warnpill">Needs ID</span>':''}</div>${action}</div>
   <h3>${safe(textOr(r["Listing / lead"], "Untitled listing"))}</h3>
   ${imageThumb(r)}
   <div class="meta">${safe(textOr(r.Neighbourhood))} · ${safe(textOr(r["Address / locator"]))}</div>
@@ -455,6 +489,19 @@ function applyLocalFields(id, fields){
   deriveListing(r);
 }
 
+function updateSelection(id, focusMap=true){
+  selectedListingId = String(id || "");
+  document.querySelectorAll(".selectedcard").forEach(x=>x.classList.remove("selectedcard"));
+  document.querySelectorAll(".selectedrow").forEach(x=>x.classList.remove("selectedrow"));
+  if(!selectedListingId) return;
+  document.querySelectorAll(`[data-id="${CSS.escape(selectedListingId)}"]`).forEach(x=>x.classList.add("selectedcard"));
+  document.querySelectorAll(`tr[data-row-id="${CSS.escape(selectedListingId)}"]`).forEach(x=>x.classList.add("selectedrow"));
+  if(focusMap && hasMap){
+    const m=markerById[selectedListingId];
+    if(m){map.setView(m.getLatLng(),14,{animate:true});m.openPopup();}
+  }
+}
+
 async function saveWorkflow(id, fields){
   const existing = rows.find(x => String(x.ID) === String(id));
   if(existing && existing.NeedsId){
@@ -531,8 +578,7 @@ function mapVisibleList(){
 function bindLeadPanelActions(){
   document.querySelectorAll(".card").forEach(c=>c.addEventListener("click",(ev)=>{
     if(ev.target.closest(".trash")||ev.target.closest(".restorebtn")||ev.target.closest("a")||ev.target.closest("[data-copy]")||ev.target.closest(".workflowedit")) return;
-    if(!hasMap) return;
-    const m=markerById[c.dataset.id]; if(m){map.setView(m.getLatLng(),14,{animate:true});m.openPopup();}
+    updateSelection(c.dataset.id, true);
   }));
   document.querySelectorAll("[data-save-workflow]").forEach(b=>b.addEventListener("click",()=>saveWorkflow(b.dataset.saveWorkflow, collectWorkflow(b.dataset.saveWorkflow))));
   document.querySelectorAll("[data-status-quick]").forEach(b=>b.addEventListener("click",()=>saveWorkflow(b.dataset.statusQuick, {
@@ -571,9 +617,10 @@ function renderLeadPanel(){
   bindLeadPanelActions();
 }
 
-function render(){
+function render(options={}){
   const list=filtered();
   currentFilteredList=list;
+  if(selectedListingId && !list.some(r => String(r.ID) === String(selectedListingId))) selectedListingId = "";
   if(hasMap){
     markers.forEach(m=>map.removeLayer(m)); markers=[]; markerById={};
     const bounds=[];
@@ -583,16 +630,17 @@ function render(){
       const m=L.marker([lat,lon],{icon:iconFor(r)}).bindPopup(popup(r)).addTo(map);
       markers.push(m); markerById[r.ID]=m; bounds.push([lat,lon]);
     });
-    if(bounds.length){bounds.push([OIART.lat,OIART.lon]);map.fitBounds(bounds,{padding:[40,40],maxZoom:13});}
+    if(options.fitMap && bounds.length){bounds.push([OIART.lat,OIART.lon]);map.fitBounds(bounds,{padding:[40,40],maxZoom:13});}
   }
   renderLeadPanel();
   const ab=el("archivebar");
   if(state.view==="archived"){ const nArch=rows.filter(isArchived).length; ab.classList.add("show"); ab.textContent = nArch ? `${nArch} archived listing(s). Restore only changes this browser unless write-back is configured. For shared cleanup, set Archived=TRUE/FALSE in the Sheet and refresh.` : "No archived listings yet. The archive button is session-only here; set Archived=TRUE in the Sheet for shared cleanup."; }
   else ab.classList.remove("show");
-  el("tbody").innerHTML=list.map(r=>`<tr class="${r.IsNew?'rownew':''}">
+  el("tbody").innerHTML=list.map(r=>`<tr data-row-id="${safe(r.ID)}" class="${r.IsNew?'rownew ':''}${String(selectedListingId)===String(r.ID)?'selectedrow':''}">
     <td><b>${safe(textOr(r.Priority, r.DisplayID))}</b>${r.NeedsId?'<br><span class="meta">Needs ID</span>':''}</td>
     <td><b>${safe(textOr(r["Listing / lead"], "Untitled listing"))}</b><br><span class="meta">${safe(textOr(r["Address / locator"]))} · ${safe(textOr(r.Type))}</span><br><span class="meta" style="font-size:11px">seen ${safe(textOr(r["Date seen"]))} · checked ${safe(textOr(r["Last checked"]))}</span></td>
     <td><span class="pill ${pillClass(r)}">${volLabel(r)}</span></td>
+    <td><span class="pill kindpill ${kindClass(r)}">${safe(r.ListingKind)}</span></td>
     <td>${safe(textOr(r.Neighbourhood))}</td>
     <td><b>${safe(textOr(r["Rent text"]))}</b><br><span class="meta">share ${safe(textOr(r["Approx monthly share"]))}</span></td>
     <td>${safe(textOr(r["Est drive min"]))}${asText(r["Est drive min"])?" min":""}<br><span class="meta">${safe(textOr(r["Km straight-line"]))}${asText(r["Km straight-line"])?" km":""}</span></td>
@@ -605,6 +653,10 @@ function render(){
     <td><div class="links">${linkButton(r.URL, "Listing")} ${linkButton(routeLink(r), "Route", "route", "No route info")}<button class="linkbtn copy" data-copy="${safe(r.ID)}" type="button">Copy msg</button></div></td>
   </tr>`).join("");
   document.querySelectorAll("[data-copy]").forEach(b=>b.addEventListener("click",()=>copyLandlordMessage(b.dataset.copy)));
+  document.querySelectorAll("tr[data-row-id]").forEach(tr=>tr.addEventListener("click",(ev)=>{
+    if(ev.target.closest("a")||ev.target.closest("button")) return;
+    updateSelection(tr.dataset.rowId, true);
+  }));
 }
 // sites grouped by category
 function renderSites(){
@@ -645,7 +697,7 @@ el("reset").onclick=()=>{state.under1000=state.parking=state.internet=state.newo
   ["under1000","parking","internet","newonly"].forEach(id=>el(id).classList.remove("active"));
   document.querySelectorAll("[data-filter]").forEach(btn=>btn.classList.remove("active"));
   ["search","volume","neighbourhood","source","drive"].forEach(id=>el(id).value="");
-  state.sortKey="PriorityNum";state.sortDir=1;render();};
+  state.sortKey="PriorityNum";state.sortDir=1;render({fitMap:true});};
 document.querySelectorAll("th[data-k]").forEach(th=>th.addEventListener("click",()=>{
   const k=th.dataset.k;
   if(state.sortKey===k) state.sortDir*=-1; else {state.sortKey=k;state.sortDir=1;}
@@ -656,7 +708,7 @@ document.querySelectorAll("th[data-k]").forEach(th=>th.addEventListener("click",
 
 function exportFilteredCsv(){
   const baseCols = [
-    "ID","Volume","Action","Priority","Listing / lead","Source","Neighbourhood","Address / locator",
+    "ID","Volume","Action","Priority","Listing / lead","Source","ListingKind","Neighbourhood","Address / locator",
     "Type","Rent text","Approx monthly share","Est drive min","Parking","Internet / utilities",
     "Availability","What to verify","URL","Maps link","Score","Archived","IsNew"
   ];
@@ -731,7 +783,9 @@ async function writeFields(id, fields){
 function applyData(d){
   rows = (d && d.rows) || [];
   sites = (d && d.sites) || [];
-  renderKPIs(); populateFilters(); renderSites(); render();
+  const shouldFitMap = !hasRenderedData;
+  renderKPIs(); populateFilters(); renderSites(); render({fitMap: shouldFitMap});
+  hasRenderedData = true;
 }
 function cacheSave(){ try{ localStorage.setItem("oiart_cache", JSON.stringify({rows,sites,ts:Date.now()})); }catch(e){} }
 function cacheLoad(){ try{ const c=JSON.parse(localStorage.getItem("oiart_cache")); if(c && Array.isArray(c.rows)) return c; }catch(e){} return null; }
