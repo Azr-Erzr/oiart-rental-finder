@@ -76,23 +76,18 @@
 
   <div class="panel">
     <h2>All leads — sortable</h2>
-    <div class="sub">Click any column header to sort. Yellow rows were added this round.</div>
+    <div class="sub">Click a column header to sort, or the <b>▸</b> button to expand a row's full details (parking, internet, contact, score breakdown…). Yellow rows were added this round.</div>
     <div class="tablewrap">
       <table>
         <thead><tr>
+          <th class="colexpand" aria-hidden="true"></th>
           <th data-k="PriorityNum">#<span class="arr">▼</span></th>
           <th data-k="Listing / lead">Listing</th>
           <th data-k="Volume">Vol</th>
-          <th data-k="ListingKind">Kind</th>
-          <th data-k="Neighbourhood">Area</th>
           <th data-k="RentNum">Rent</th>
           <th data-k="DriveNum">Drive</th>
           <th data-k="ScoreNum">Score</th>
           <th data-k="Status">Status</th>
-          <th data-k="LastContacted">Contact</th>
-          <th data-k="Parking">Parking</th>
-          <th data-k="Internet / utilities">Internet/util</th>
-          <th data-k="Decision">Decision</th>
           <th>Links</th>
         </tr></thead>
         <tbody id="tbody"></tbody>

@@ -100,6 +100,51 @@ function tableThumb(r){
   if(!url) return "";
   return `<img class="tablethumb" src="${safe(url)}" alt="${safe(imageAlt(r))}" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`;
 }
+function detailCell(label, value){
+  const v = asText(value);
+  if(!v) return "";
+  return `<div class="ditem"><span class="dlabel">${safe(label)}</span><span class="dval">${safe(v)}</span></div>`;
+}
+// One compact main row + a hidden detail row (toggled by the ▸ button) so the
+// table stays scannable and the heavy fields only appear on demand.
+function tableRow(r){
+  const id = safe(r.ID);
+  const sel = String(selectedListingId) === String(r.ID) ? "selectedrow" : "";
+  const lvl = scoreLevelClass(r);
+  const driveTxt = asText(r["Est drive min"]) ? `${safe(r["Est drive min"])} min` : "—";
+  const kmTxt = asText(r["Km straight-line"]) ? `${safe(r["Km straight-line"])} km` : "";
+  const dup = asText(r.DuplicateOf) ? `<span class="pill warnpill" title="Duplicate of ${safe(r.DuplicateOf)}">dup ${safe(r.DuplicateOf)}</span>` : "";
+  const scoreFlag = lvl ? `<span class="scoreflag ${lvl}" title="A must-have criterion is unconfirmed — expand for details">⚠</span>` : "";
+
+  const detail = [
+    detailCell("Parking", textOr(r.Parking, "not stated")),
+    detailCell("Internet / utilities", textOr(r["Internet / utilities"], "not stated")),
+    detailCell("Availability", textOr(r.Availability, "not stated")),
+    detailCell("Contact", r.ContactedBool ? compact(["Contacted", r.LastContacted]) : compact(["Not contacted", r.Response])),
+    detailCell("Decision", compact([r.Decision, r.ViewingDate ? ("viewing " + r.ViewingDate) : ""])),
+    r.ScamRisk ? detailCell("Scam risk", r.ScamRisk) : "",
+    r.FriendNotes ? detailCell("Notes", r.FriendNotes) : "",
+    detailCell("Dates", compact([r["Date seen"] ? ("seen " + r["Date seen"]) : "", r["Last checked"] ? ("checked " + r["Last checked"]) : ""])),
+    detailCell("Score breakdown", scoreBreakdown(r)),
+    r["Why add / note"] ? detailCell("Why", r["Why add / note"]) : "",
+    r["What to verify"] ? detailCell("Verify", r["What to verify"]) : ""
+  ].join("");
+  const flags = scoreFlags(r);
+  const confirmRow = flags ? `<div class="ditem ditem-full"><span class="dlabel">Still to confirm</span><span>${flags}</span></div>` : "";
+
+  return `<tr data-row-id="${id}" class="mainrow ${r.IsNew?'rownew ':''}${sel}">
+    <td class="colexpand"><button class="expandbtn" data-expand="${id}" aria-label="Show full details" title="Show full details">▸</button></td>
+    <td><b class="rank">${safe(textOr(r.Priority, r.DisplayID))}</b>${r.NeedsId?'<br><span class="meta">Needs ID</span>':''}</td>
+    <td><div class="listingcell">${tableThumb(r)}<div class="listinginfo"><b class="listingtitle">${safe(textOr(r["Listing / lead"], "Untitled listing"))}</b><div class="meta">${safe(textOr(r.Neighbourhood))}${asText(r.Type)?` · ${safe(r.Type)}`:""}</div><div class="kindline"><span class="pill kindpill ${kindClass(r)}">${safe(r.ListingKind)}</span>${r.IsNew?'<span class="pill newpill">★ new</span>':''}${dup}</div></div></div></td>
+    <td><span class="pill ${pillClass(r)}">${volLabel(r)}</span></td>
+    <td><b>${safe(textOr(r["Rent text"], "—"))}</b>${asText(r["Approx monthly share"])?`<br><span class="meta">share ${safe(r["Approx monthly share"])}</span>`:""}</td>
+    <td>${driveTxt}${kmTxt?`<br><span class="meta">${kmTxt}</span>`:""}</td>
+    <td><b class="scoreval ${lvl}" title="${safe(scoreBreakdown(r))}">${safe(r.ScoreNum)}</b>${scoreFlag}</td>
+    <td><span class="statustext">${safe(textOr(r.Status || r.Action, "—"))}</span></td>
+    <td><div class="links tablelinks">${linkButton(r.URL, "Listing")} ${linkButton(routeLink(r), "Route", "route", "No route")}<button class="linkbtn copy" data-copy="${id}" type="button">Copy</button></div></td>
+  </tr>
+  <tr class="detailrow" data-detail-id="${id}" hidden><td class="colexpand"></td><td colspan="8"><div class="detailgrid">${detail}${confirmRow}</div></td></tr>`;
+}
 function routeLink(r){
   const explicit = safeUrl(r["Maps link"]);
   if(explicit) return explicit;
@@ -859,24 +904,16 @@ function render(options={}){
   const ab=el("archivebar");
   if(state.view==="archived"){ const nArch=rows.filter(isArchived).length; ab.classList.add("show"); ab.textContent = nArch ? `${nArch} archived listing(s). Restore only changes this browser unless write-back is configured. For shared cleanup, set Archived=TRUE/FALSE in the Sheet and refresh.` : "No archived listings yet. The archive button is session-only here; set Archived=TRUE in the Sheet for shared cleanup."; }
   else ab.classList.remove("show");
-  el("tbody").innerHTML=list.map(r=>`<tr data-row-id="${safe(r.ID)}" class="${r.IsNew?'rownew ':''}${String(selectedListingId)===String(r.ID)?'selectedrow':''}">
-    <td><b>${safe(textOr(r.Priority, r.DisplayID))}</b>${r.NeedsId?'<br><span class="meta">Needs ID</span>':''}</td>
-    <td><div class="listingcell">${tableThumb(r)}<div><b>${safe(textOr(r["Listing / lead"], "Untitled listing"))}</b><br><span class="meta">${safe(textOr(r["Address / locator"]))} · ${safe(textOr(r.Type))}</span><br><span class="meta" style="font-size:11px">seen ${safe(textOr(r["Date seen"]))} · checked ${safe(textOr(r["Last checked"]))}</span></div></div></td>
-    <td><span class="pill ${pillClass(r)}">${volLabel(r)}</span></td>
-    <td><span class="pill kindpill ${kindClass(r)}">${safe(r.ListingKind)}</span></td>
-    <td>${safe(textOr(r.Neighbourhood))}</td>
-    <td><b>${safe(textOr(r["Rent text"]))}</b><br><span class="meta">share ${safe(textOr(r["Approx monthly share"]))}</span></td>
-    <td>${safe(textOr(r["Est drive min"]))}${asText(r["Est drive min"])?" min":""}<br><span class="meta">${safe(textOr(r["Km straight-line"]))}${asText(r["Km straight-line"])?" km":""}</span></td>
-    <td><b class="scoreval ${scoreLevelClass(r)}" title="${safe(scoreBreakdown(r))}">${safe(r.ScoreNum)}</b>${r.ScoreComputed && Number.isFinite(r.ScoreSheet) && r.ScoreSheet!==r.ScoreNum?`<br><span class="meta">sheet ${safe(r.ScoreSheet)}</span>`:""}${(r.ScoreUnconfirmed&&r.ScoreUnconfirmed.length)?`<br><span class="meta naflag" title="Not stated yet — confirm: ${safe(r.ScoreUnconfirmed.map(k=>SCORE_SHORT[k]||k).join(', '))}">⚠ ${r.ScoreUnconfirmed.length} to confirm</span>`:""}</td>
-    <td>${safe(textOr(r.Status || r.Action))}${asText(r.DuplicateOf)?`<br><span class="meta">Dup of ${safe(r.DuplicateOf)}</span>`:""}${r.ScamRisk?`<br><span class="meta">Scam risk: ${safe(r.ScamRisk)}</span>`:""}</td>
-    <td>${r.ContactedBool?"Contacted":"Not contacted"}<br><span class="meta">${safe(textOr(r.LastContacted || r.Response))}</span></td>
-    <td>${safe(textOr(r.Parking))}</td>
-    <td>${safe(textOr(r["Internet / utilities"]))}</td>
-    <td>${safe(textOr(r.Decision))}${r.ViewingDate?`<br><span class="meta">Viewing: ${safe(r.ViewingDate)}</span>`:""}${r.FriendNotes?`<br><span class="meta">${safe(r.FriendNotes)}</span>`:""}</td>
-    <td><div class="links">${linkButton(r.URL, "Listing")} ${linkButton(routeLink(r), "Route", "route", "No route info")}<button class="linkbtn copy" data-copy="${safe(r.ID)}" type="button">Copy msg</button></div></td>
-  </tr>`).join("");
+  el("tbody").innerHTML=list.map(tableRow).join("");
   document.querySelectorAll("[data-copy]").forEach(b=>b.addEventListener("click",()=>copyLandlordMessage(b.dataset.copy)));
-  document.querySelectorAll("tr[data-row-id]").forEach(tr=>tr.addEventListener("click",(ev)=>{
+  document.querySelectorAll("[data-expand]").forEach(b=>b.addEventListener("click",(ev)=>{
+    ev.stopPropagation();
+    const dr=document.querySelector(`tr[data-detail-id="${CSS.escape(b.dataset.expand)}"]`);
+    if(!dr) return;
+    if(dr.hasAttribute("hidden")){ dr.removeAttribute("hidden"); b.textContent="▾"; b.classList.add("open"); }
+    else { dr.setAttribute("hidden",""); b.textContent="▸"; b.classList.remove("open"); }
+  }));
+  document.querySelectorAll("tr.mainrow[data-row-id]").forEach(tr=>tr.addEventListener("click",(ev)=>{
     if(ev.target.closest("a")||ev.target.closest("button")) return;
     updateSelection(tr.dataset.rowId, true);
   }));
