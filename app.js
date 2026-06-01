@@ -274,9 +274,10 @@ if(hasMap){
   L.marker([OIART.lat,OIART.lon],{icon:iconFor("oiart"),zIndexOffset:1000}).bindPopup("<h3>OIART</h3><b>502 Newbold St, London ON</b><br>5 km and 10 km rings shown.").addTo(map);
   L.circle([OIART.lat,OIART.lon],{radius:5000,color:"#2f6f57",weight:2,fillOpacity:.03}).addTo(map);
   L.circle([OIART.lat,OIART.lon],{radius:10000,color:"#315f87",weight:2,fillOpacity:.02}).addTo(map);
+  map.on("moveend zoomend",()=>{ if(currentFilteredList.length) renderLeadPanel(); });
 }
 
-let markers=[], markerById={};
+let markers=[], markerById={}, currentFilteredList=[];
 function popup(r){
   return `<h3>${safe(textOr(r.Priority, r.DisplayID))}. ${safe(textOr(r["Listing / lead"], "Untitled listing"))}</h3>
   <span class="pill ${pillClass(r)}">${volLabel(r)}</span><span class="pill scorepill">Score ${safe(textOr(r.Score))}</span>${r.IsNew?'<span class="pill newpill">★ new</span>':''}<br>
@@ -496,21 +497,21 @@ function filtered(){
   });
   return list;
 }
-function render(){
-  const list=filtered();
-  el("count").textContent=`(${list.length} shown)`;
-  if(hasMap){
-    markers.forEach(m=>map.removeLayer(m)); markers=[]; markerById={};
-    const bounds=[];
-    list.forEach(r=>{
-      const lat=num(r.LatNum,NaN), lon=num(r.LonNum,NaN);
-      if(!Number.isFinite(lat)||!Number.isFinite(lon)) return;
-      const m=L.marker([lat,lon],{icon:iconFor(r)}).bindPopup(popup(r)).addTo(map);
-      markers.push(m); markerById[r.ID]=m; bounds.push([lat,lon]);
-    });
-    if(bounds.length){bounds.push([OIART.lat,OIART.lon]);map.fitBounds(bounds,{padding:[40,40],maxZoom:13});}
-  }
-  el("cards").innerHTML=list.map(card).join("");
+
+function hasCoords(r){
+  return Number.isFinite(num(r.LatNum,NaN)) && Number.isFinite(num(r.LonNum,NaN));
+}
+
+function mapVisibleList(){
+  if(!hasMap || !map) return currentFilteredList;
+  const bounds = map.getBounds();
+  return currentFilteredList.filter(r => {
+    const lat=num(r.LatNum,NaN), lon=num(r.LonNum,NaN);
+    return Number.isFinite(lat) && Number.isFinite(lon) && bounds.contains([lat,lon]);
+  });
+}
+
+function bindLeadPanelActions(){
   document.querySelectorAll(".card").forEach(c=>c.addEventListener("click",(ev)=>{
     if(ev.target.closest(".trash")||ev.target.closest(".restorebtn")||ev.target.closest("a")||ev.target.closest("[data-copy]")||ev.target.closest(".workflowedit")) return;
     if(!hasMap) return;
@@ -534,6 +535,40 @@ function render(){
     archived.delete(rid); persist(); render();
     if(WRITE_URL){ writeFields(rid,{Archived:"FALSE",Status:"",UpdatedAt:new Date().toISOString(),UpdatedBy:UPDATED_BY}); }
   }));
+  document.querySelectorAll("[data-copy]").forEach(b=>b.addEventListener("click",()=>copyLandlordMessage(b.dataset.copy)));
+}
+
+function renderLeadPanel(){
+  const list = mapVisibleList();
+  const total = currentFilteredList.length;
+  const unmapped = currentFilteredList.filter(r => !hasCoords(r)).length;
+  el("count").textContent = hasMap
+    ? `(${list.length} on map · ${total} filtered${unmapped ? ` · ${unmapped} unmapped` : ""})`
+    : `(${total} shown)`;
+  if(hasMap){
+    el("sideSub").textContent = "Showing the leads currently visible in the map view. Pan or zoom the map to change this pane; the full filtered table stays below.";
+  }
+  el("cards").innerHTML = list.length
+    ? list.map(card).join("")
+    : `<div class="emptycard">No mapped leads in this view. Pan or zoom the map, or use the full filtered table below.</div>`;
+  bindLeadPanelActions();
+}
+
+function render(){
+  const list=filtered();
+  currentFilteredList=list;
+  if(hasMap){
+    markers.forEach(m=>map.removeLayer(m)); markers=[]; markerById={};
+    const bounds=[];
+    list.forEach(r=>{
+      const lat=num(r.LatNum,NaN), lon=num(r.LonNum,NaN);
+      if(!Number.isFinite(lat)||!Number.isFinite(lon)) return;
+      const m=L.marker([lat,lon],{icon:iconFor(r)}).bindPopup(popup(r)).addTo(map);
+      markers.push(m); markerById[r.ID]=m; bounds.push([lat,lon]);
+    });
+    if(bounds.length){bounds.push([OIART.lat,OIART.lon]);map.fitBounds(bounds,{padding:[40,40],maxZoom:13});}
+  }
+  renderLeadPanel();
   const ab=el("archivebar");
   if(state.view==="archived"){ const nArch=rows.filter(isArchived).length; ab.classList.add("show"); ab.textContent = nArch ? `${nArch} archived listing(s). Restore only changes this browser unless write-back is configured. For shared cleanup, set Archived=TRUE/FALSE in the Sheet and refresh.` : "No archived listings yet. The archive button is session-only here; set Archived=TRUE in the Sheet for shared cleanup."; }
   else ab.classList.remove("show");

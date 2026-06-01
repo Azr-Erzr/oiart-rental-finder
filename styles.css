@@ -52,6 +52,7 @@ input:focus,select:focus{outline:2px solid var(--green-soft);border-color:var(--
 .card h3{font-size:15.5px;line-height:1.2;margin-bottom:5px;}
 .card .meta{color:var(--muted);font-size:12.5px;}
 .card .rent{font-weight:700;font-size:14px;margin:5px 0;}
+.emptycard{border:1px dashed var(--line);background:#fffaf2;border-radius:14px;padding:16px;color:var(--muted);font-size:13px;line-height:1.45;}
 .pill{display:inline-block;padding:4px 9px;border-radius:999px;font-size:11px;font-weight:800;margin:0 4px 5px 0;}
 .core{background:var(--green-soft);color:var(--green);}
 .stretch{background:var(--blue-soft);color:var(--blue);}
