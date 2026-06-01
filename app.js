@@ -58,6 +58,29 @@ function uniqSorted(arr){
 function asText(v){ return String(v ?? "").trim(); }
 function truthy(v){ return /^(true|yes|y|1|confirmed|booked|done)$/i.test(asText(v)); }
 function compact(parts){ return parts.map(asText).filter(Boolean).join(" "); }
+function textOr(v, fallback="Not entered"){ return asText(v) || fallback; }
+function parseNum(v){ const s = asText(v).replace(/[$,]/g, ""); return s ? Number(s) : NaN; }
+function safeUrl(v){
+  const s = asText(v);
+  if(!s) return "";
+  try{
+    const u = new URL(s);
+    return /^https?:$/.test(u.protocol) ? u.href : "";
+  }catch(e){ return ""; }
+}
+function linkButton(url, label, cls="", missing="No link entered"){
+  const href = safeUrl(url);
+  return href
+    ? `<a class="linkbtn ${cls}" href="${safe(href)}" target="_blank" rel="noopener">${safe(label)}</a>`
+    : `<span class="linkbtn disabled" title="${safe(missing)}">${safe(missing)}</span>`;
+}
+function routeLink(r){
+  const explicit = safeUrl(r["Maps link"]);
+  if(explicit) return explicit;
+  if(!asText(r["Address / locator"]) && !asText(r.Neighbourhood)) return "";
+  const dest = compact([r["Address / locator"], r.Neighbourhood, "London ON"]);
+  return `https://www.google.com/maps/dir/?api=1&origin=502+Newbold+St+London+ON&destination=${encodeURIComponent(dest)}`;
+}
 function csvEscape(v){
   const s = String(v ?? "");
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -85,7 +108,7 @@ function parseCsv(text){
   const header = (rows.shift() || []).map(asText);
   return rows
     .filter(r => r.some(cell => asText(cell)))
-    .map(r => Object.fromEntries(header.map((h, i) => [h, r[i] ?? ""])));
+    .map((r, index) => ({...Object.fromEntries(header.map((h, i) => [h, r[i] ?? ""])), _RowNumber: index + 2}));
 }
 
 // gviz wraps the JSON in google.visualization.Query.setResponse(...). Strip it,
@@ -96,7 +119,7 @@ function parseGviz(text){
   const json = text.slice(text.indexOf("(") + 1, text.lastIndexOf(")"));
   const data = JSON.parse(json);
   const cols = data.table.cols.map(c => ({ label: String(c.label || c.id || "").trim(), type: c.type }));
-  return data.table.rows.map(tr => {
+  return data.table.rows.map((tr, index) => {
     const o = {};
     (tr.c || []).forEach((cell, i) => {
       const col = cols[i];
@@ -110,6 +133,7 @@ function parseGviz(text){
       }
       o[col.label] = val;
     });
+    o._RowNumber = index + 2;
     return o;
   });
 }
@@ -123,17 +147,21 @@ async function loadCsv(path, kind){
 
 // Recompute the helper fields the UI relies on (the CSV/Sheet does NOT contain them).
 function deriveListing(o){
-  const rent  = Number(o["Approx monthly share"]);
-  const drive = Number(o["Est drive min"]);
+  const originalId = asText(o.ID);
+  o.NeedsId = !originalId;
+  o.ID = originalId || `sheet-row-${o._RowNumber || Math.random().toString(36).slice(2)}`;
+  o.DisplayID = originalId || `row ${o._RowNumber || "without ID"}`;
+  const rent  = parseNum(o["Approx monthly share"]);
+  const drive = parseNum(o["Est drive min"]);
   const park  = String(o["Parking"] || "");
   const net   = String(o["Internet / utilities"] || "");
   WORKFLOW_COLUMNS.forEach(k => { if(o[k] == null) o[k] = ""; });
-  o.PriorityNum = Number(o["Priority"]);
-  o.ScoreNum    = Number(o["Score"]);
-  o.DriveNum    = Number(o["Est drive min"]);
-  o.RentNum     = Number(o["Approx monthly share"]);
-  o.LatNum      = Number(o["Latitude"]);
-  o.LonNum      = Number(o["Longitude"]);
+  o.PriorityNum = parseNum(o["Priority"]);
+  o.ScoreNum    = parseNum(o["Score"]);
+  o.DriveNum    = parseNum(o["Est drive min"]);
+  o.RentNum     = parseNum(o["Approx monthly share"]);
+  o.LatNum      = parseNum(o["Latitude"]);
+  o.LonNum      = parseNum(o["Longitude"]);
   o.UnderTarget = Number.isFinite(rent)  && rent  <= 1000;
   o.EasyCommute = Number.isFinite(drive) && drive <= 15;
   o.HasParking  = /yes|incl|avail|spot|driveway|assigned|surface|garage|outdoor/i.test(park) && !/no parking/i.test(park);
@@ -191,9 +219,9 @@ const OIART = {lat:42.936, lon:-81.205};
 const el = id => document.getElementById(id);
 function safe(s){return String(s ?? "").replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function num(v,f=0){const n=Number(v);return Number.isFinite(n)?n:f;}
-function volClass(r){return String(r.Volume).includes("Vol 1")?"vol1":"vol2";}
-function pillClass(r){return String(r.Volume).includes("Vol 1")?"core":"stretch";}
-function volLabel(r){return String(r.Volume).includes("Vol 1")?"Vol 1 core":"Vol 2 stretch";}
+function volClass(r){return String(r.Volume).includes("Vol 1")?"vol1":String(r.Volume).includes("Vol 2")?"vol2":"unknownvol";}
+function pillClass(r){return String(r.Volume).includes("Vol 1")?"core":String(r.Volume).includes("Vol 2")?"stretch":"unknownpill";}
+function volLabel(r){return String(r.Volume).includes("Vol 1")?"Vol 1 core":String(r.Volume).includes("Vol 2")?"Vol 2 stretch":"Volume not set";}
 function searchText(r){return [r["Listing / lead"],r.Neighbourhood,r["Address / locator"],r.Type,r["Why add / note"],r["What to verify"],r.Source,r["Criteria fit"],r.Status,r.Response,r.Decision,r.FriendNotes,r.RemoveReason].join(" ").toLowerCase();}
 
 const state={
@@ -239,7 +267,7 @@ if(hasMap){
 
 function iconFor(r){
   const cls = r==="oiart" ? "oiart" : volClass(r)+(r.IsNew?" isnew":"");
-  const label = r==="oiart" ? "★" : safe(r.Priority||r.ID);
+  const label = r==="oiart" ? "★" : safe(r.Priority || r.DisplayID || r.ID);
   return L.divIcon({className:"",html:`<div class="marker-label ${cls}">${label}</div>`,iconSize:[30,30],iconAnchor:[15,15],popupAnchor:[0,-14]});
 }
 if(hasMap){
@@ -250,21 +278,23 @@ if(hasMap){
 
 let markers=[], markerById={};
 function popup(r){
-  return `<h3>${safe(r.Priority)}. ${safe(r["Listing / lead"])}</h3>
-  <span class="pill ${pillClass(r)}">${volLabel(r)}</span><span class="pill scorepill">Score ${safe(r.Score)}/100</span>${r.IsNew?'<span class="pill newpill">★ new</span>':''}<br>
-  <b>Area:</b> ${safe(r.Neighbourhood)}<br><b>Locator:</b> ${safe(r["Address / locator"])}<br>
-  <b>Type:</b> ${safe(r.Type)}<br><b>Rent:</b> ${safe(r["Rent text"])}<br>
-  <b>Drive:</b> ${safe(r["Est drive min"])} min · <b>Parking:</b> ${safe(r.Parking)}<br>
-  <b>Internet/util:</b> ${safe(r["Internet / utilities"])}<br>
-  <p style="margin:6px 0"><b>Why:</b> ${safe(r["Why add / note"])}</p>
-  <p style="margin:6px 0"><b>Verify:</b> ${safe(r["What to verify"])}</p>
-  <div class="links"><a class="linkbtn" href="${safe(r.URL)}" target="_blank">Listing / search</a><a class="linkbtn route" href="${safe(r["Maps link"])}" target="_blank">Route to OIART</a></div>`;
+  return `<h3>${safe(textOr(r.Priority, r.DisplayID))}. ${safe(textOr(r["Listing / lead"], "Untitled listing"))}</h3>
+  <span class="pill ${pillClass(r)}">${volLabel(r)}</span><span class="pill scorepill">Score ${safe(textOr(r.Score))}</span>${r.IsNew?'<span class="pill newpill">★ new</span>':''}<br>
+  <b>Area:</b> ${safe(textOr(r.Neighbourhood))}<br><b>Locator:</b> ${safe(textOr(r["Address / locator"]))}<br>
+  <b>Type:</b> ${safe(textOr(r.Type))}<br><b>Rent:</b> ${safe(textOr(r["Rent text"]))}<br>
+  <b>Drive:</b> ${safe(textOr(r["Est drive min"]))}${asText(r["Est drive min"])?" min":""} · <b>Parking:</b> ${safe(textOr(r.Parking))}<br>
+  <b>Internet/util:</b> ${safe(textOr(r["Internet / utilities"]))}<br>
+  <p style="margin:6px 0"><b>Why:</b> ${safe(textOr(r["Why add / note"]))}</p>
+  <p style="margin:6px 0"><b>Verify:</b> ${safe(textOr(r["What to verify"]))}</p>
+  <div class="links">${linkButton(r.URL, "Listing / search")} ${linkButton(routeLink(r), "Route to OIART", "route", "No route info")}</div>`;
 }
 function card(r){
   const arch=isArchived(r);
   const action = arch
     ? `<button class="restorebtn" data-restore="${safe(r.ID)}">↩ Restore</button>`
-    : `<button class="trash" data-trash="${safe(r.ID)}" title="Archive to the Sheet (hide from Active)">🗑</button>`;
+    : r.NeedsId
+      ? `<button class="trash disabled" disabled title="Add an ID in the Sheet before archiving">🗑</button>`
+      : `<button class="trash" data-trash="${safe(r.ID)}" title="Archive to the Sheet (hide from Active)">🗑</button>`;
   const seen = r["Date seen"] ? `seen ${safe(r["Date seen"])}` : "";
   const chk = r["Last checked"] ? ` · checked ${safe(r["Last checked"])}` : "";
   const workflow = [
@@ -273,24 +303,29 @@ function card(r){
     ["Response", r.Response],
     ["Viewing", r.ViewingDate || (r.ViewingBookedBool ? "booked" : "")]
   ].filter(x => asText(x[1]));
+  const rent = textOr(r["Rent text"]);
+  const drive = asText(r["Est drive min"]) ? `~${safe(r["Est drive min"])} min` : "drive not entered";
   return `<div class="card" data-id="${safe(r.ID)}">
-  <div class="cardhead"><div class="pills"><span class="pill ${pillClass(r)}">${volLabel(r)}</span><span class="pill scorepill">#${safe(r.Priority)} · ${safe(r.Score)}</span>${r.IsNew?'<span class="pill newpill">★ new</span>':''}</div>${action}</div>
-  <h3>${safe(r["Listing / lead"])}</h3>
-  <div class="meta">${safe(r.Neighbourhood)} · ${safe(r["Address / locator"])}</div>
-  <div class="rent">${safe(r["Rent text"])} <span class="meta" style="font-weight:500">· ~${safe(r["Est drive min"])} min</span></div>
-  <div class="meta">${safe(r["Why add / note"])}</div>
+  <div class="cardhead"><div class="pills"><span class="pill ${pillClass(r)}">${volLabel(r)}</span><span class="pill scorepill">#${safe(textOr(r.Priority, r.DisplayID))} · ${safe(textOr(r.Score, "score not entered"))}</span>${r.IsNew?'<span class="pill newpill">★ new</span>':''}${r.NeedsId?'<span class="pill warnpill">Needs ID</span>':''}</div>${action}</div>
+  <h3>${safe(textOr(r["Listing / lead"], "Untitled listing"))}</h3>
+  <div class="meta">${safe(textOr(r.Neighbourhood))} · ${safe(textOr(r["Address / locator"]))}</div>
+  <div class="rent">${safe(rent)} <span class="meta" style="font-weight:500">· ${drive}</span></div>
+  <div class="meta">${safe(textOr(r["Why add / note"]))}</div>
   ${workflow.length ? `<div class="workmeta">${workflow.map(([k,v]) => `<span><b>${safe(k)}:</b> ${safe(v)}</span>`).join("")}</div>` : ""}
   ${workflowEditor(r)}
   <div class="meta" style="margin-top:4px;font-size:11.5px">${seen}${chk}</div>
-  <div class="links"><a class="linkbtn" href="${safe(r.URL)}" target="_blank">Listing</a><a class="linkbtn route" href="${safe(r["Maps link"])}" target="_blank">Route</a><button class="linkbtn copy" data-copy="${safe(r.ID)}" type="button">Copy landlord message</button></div>
+  <div class="links">${linkButton(r.URL, "Listing")} ${linkButton(routeLink(r), "Route", "route", "No route info")}<button class="linkbtn copy" data-copy="${safe(r.ID)}" type="button">Copy landlord message</button></div>
   </div>`;
 }
 
 function selected(value, option){ return asText(value) === option ? " selected" : ""; }
 function checked(value){ return truthy(value) ? " checked" : ""; }
 function workflowEditor(r){
+  const disabled = r.NeedsId ? " disabled" : "";
+  const idWarning = r.NeedsId ? `<div class="inlinewarn">Add an ID in the Sheet before saving changes for this row.</div>` : "";
   return `<details class="workflowedit" data-workflow-id="${safe(r.ID)}">
     <summary>Update status</summary>
+    ${idWarning}
     <div class="workflowgrid workflowgrid-simple">
       <label>Status
         <select data-field="Status">
@@ -301,9 +336,9 @@ function workflowEditor(r){
       <label>Friend notes <textarea data-field="FriendNotes" placeholder="Quick shared note">${safe(r.FriendNotes)}</textarea></label>
     </div>
     <div class="links workflowactions">
-      <button class="linkbtn copy" data-save-workflow="${safe(r.ID)}" type="button">Save to Sheet</button>
-      <button class="linkbtn copy" data-status-quick="${safe(r.ID)}" data-status-value="Waiting reply" type="button">Waiting reply</button>
-      <button class="linkbtn copy" data-status-quick="${safe(r.ID)}" data-status-value="Archived" type="button">Archive</button>
+      <button class="linkbtn copy" data-save-workflow="${safe(r.ID)}" type="button"${disabled}>Save to Sheet</button>
+      <button class="linkbtn copy" data-status-quick="${safe(r.ID)}" data-status-value="Waiting reply" type="button"${disabled}>Waiting reply</button>
+      <button class="linkbtn copy" data-status-quick="${safe(r.ID)}" data-status-value="Archived" type="button"${disabled}>Archive</button>
     </div>
     <details class="advancededit">
       <summary>Advanced fields</summary>
@@ -403,6 +438,11 @@ function applyLocalFields(id, fields){
 }
 
 async function saveWorkflow(id, fields){
+  const existing = rows.find(x => String(x.ID) === String(id));
+  if(existing && existing.NeedsId){
+    toast("Add an ID in the Sheet before saving changes for this row.");
+    return;
+  }
   const clean = {};
   Object.keys(fields).forEach(k => {
     if(WRITABLE_FIELDS.includes(k)) clean[k] = fields[k];
@@ -498,19 +538,19 @@ function render(){
   if(state.view==="archived"){ const nArch=rows.filter(isArchived).length; ab.classList.add("show"); ab.textContent = nArch ? `${nArch} archived listing(s). Restore only changes this browser unless write-back is configured. For shared cleanup, set Archived=TRUE/FALSE in the Sheet and refresh.` : "No archived listings yet. The archive button is session-only here; set Archived=TRUE in the Sheet for shared cleanup."; }
   else ab.classList.remove("show");
   el("tbody").innerHTML=list.map(r=>`<tr class="${r.IsNew?'rownew':''}">
-    <td><b>${safe(r.Priority)}</b></td>
-    <td><b>${safe(r["Listing / lead"])}</b><br><span class="meta">${safe(r["Address / locator"])} · ${safe(r.Type)}</span><br><span class="meta" style="font-size:11px">seen ${safe(r["Date seen"])} · checked ${safe(r["Last checked"])}</span></td>
+    <td><b>${safe(textOr(r.Priority, r.DisplayID))}</b>${r.NeedsId?'<br><span class="meta">Needs ID</span>':''}</td>
+    <td><b>${safe(textOr(r["Listing / lead"], "Untitled listing"))}</b><br><span class="meta">${safe(textOr(r["Address / locator"]))} · ${safe(textOr(r.Type))}</span><br><span class="meta" style="font-size:11px">seen ${safe(textOr(r["Date seen"]))} · checked ${safe(textOr(r["Last checked"]))}</span></td>
     <td><span class="pill ${pillClass(r)}">${volLabel(r)}</span></td>
-    <td>${safe(r.Neighbourhood)}</td>
-    <td><b>${safe(r["Rent text"])}</b><br><span class="meta">share ${safe(r["Approx monthly share"])}</span></td>
-    <td>${safe(r["Est drive min"])} min<br><span class="meta">${safe(r["Km straight-line"])} km</span></td>
-    <td><b>${safe(r.Score)}</b></td>
-    <td>${safe(r.Status || r.Action)}${r.ScamRisk?`<br><span class="meta">Scam risk: ${safe(r.ScamRisk)}</span>`:""}</td>
-    <td>${r.ContactedBool?"Contacted":"Not contacted"}<br><span class="meta">${safe(r.LastContacted || r.Response || "")}</span></td>
-    <td>${safe(r.Parking)}</td>
-    <td>${safe(r["Internet / utilities"])}</td>
-    <td>${safe(r.Decision)}${r.ViewingDate?`<br><span class="meta">Viewing: ${safe(r.ViewingDate)}</span>`:""}${r.FriendNotes?`<br><span class="meta">${safe(r.FriendNotes)}</span>`:""}</td>
-    <td><div class="links"><a class="linkbtn" href="${safe(r.URL)}" target="_blank">Listing</a><a class="linkbtn route" href="${safe(r["Maps link"])}" target="_blank">Route</a><button class="linkbtn copy" data-copy="${safe(r.ID)}" type="button">Copy msg</button></div></td>
+    <td>${safe(textOr(r.Neighbourhood))}</td>
+    <td><b>${safe(textOr(r["Rent text"]))}</b><br><span class="meta">share ${safe(textOr(r["Approx monthly share"]))}</span></td>
+    <td>${safe(textOr(r["Est drive min"]))}${asText(r["Est drive min"])?" min":""}<br><span class="meta">${safe(textOr(r["Km straight-line"]))}${asText(r["Km straight-line"])?" km":""}</span></td>
+    <td><b>${safe(textOr(r.Score))}</b></td>
+    <td>${safe(textOr(r.Status || r.Action))}${r.ScamRisk?`<br><span class="meta">Scam risk: ${safe(r.ScamRisk)}</span>`:""}</td>
+    <td>${r.ContactedBool?"Contacted":"Not contacted"}<br><span class="meta">${safe(textOr(r.LastContacted || r.Response))}</span></td>
+    <td>${safe(textOr(r.Parking))}</td>
+    <td>${safe(textOr(r["Internet / utilities"]))}</td>
+    <td>${safe(textOr(r.Decision))}${r.ViewingDate?`<br><span class="meta">Viewing: ${safe(r.ViewingDate)}</span>`:""}${r.FriendNotes?`<br><span class="meta">${safe(r.FriendNotes)}</span>`:""}</td>
+    <td><div class="links">${linkButton(r.URL, "Listing")} ${linkButton(routeLink(r), "Route", "route", "No route info")}<button class="linkbtn copy" data-copy="${safe(r.ID)}" type="button">Copy msg</button></div></td>
   </tr>`).join("");
   document.querySelectorAll("[data-copy]").forEach(b=>b.addEventListener("click",()=>copyLandlordMessage(b.dataset.copy)));
 }
@@ -524,11 +564,11 @@ function renderSites(){
   cats.forEach(cat=>{
     html+=`<div class="sitegroup"><h3>${safe(cat)} · ${groups[cat].length}</h3><div class="sitegrid">`;
     html+=groups[cat].map(s=>`<div class="sitecard ${s.IsNew?'new':''}">
-      <h3>${safe(s.Source)}${s.IsNew?' <span class="pill newpill">new</span>':''}</h3>
-      <div class="role">${safe(s["Use for"])}</div>
-      <div class="f"><b>Filters:</b> ${safe(s.Filters)}</div>
-      <div class="f"><b>Keep:</b> ${safe(s.Keep)}</div>
-      <div class="f"><b>Avoid:</b> ${safe(s.Avoid)}</div>
+      <h3>${safe(textOr(s.Source, "Unnamed source"))}${s.IsNew?' <span class="pill newpill">new</span>':''}</h3>
+      <div class="role">${safe(textOr(s["Use for"]))}</div>
+      <div class="f"><b>Filters:</b> ${safe(textOr(s.Filters))}</div>
+      <div class="f"><b>Keep:</b> ${safe(textOr(s.Keep))}</div>
+      <div class="f"><b>Avoid:</b> ${safe(textOr(s.Avoid))}</div>
     </div>`).join("");
     html+=`</div></div>`;
   });
