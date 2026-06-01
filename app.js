@@ -95,6 +95,11 @@ function popupImage(r){
   if(!url) return "";
   return `<img class="popupthumb" src="${safe(url)}" alt="${safe(imageAlt(r))}" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`;
 }
+function tableThumb(r){
+  const url = listingImageUrl(r);
+  if(!url) return "";
+  return `<img class="tablethumb" src="${safe(url)}" alt="${safe(imageAlt(r))}" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`;
+}
 function routeLink(r){
   const explicit = safeUrl(r["Maps link"]);
   if(explicit) return explicit;
@@ -856,7 +861,7 @@ function render(options={}){
   else ab.classList.remove("show");
   el("tbody").innerHTML=list.map(r=>`<tr data-row-id="${safe(r.ID)}" class="${r.IsNew?'rownew ':''}${String(selectedListingId)===String(r.ID)?'selectedrow':''}">
     <td><b>${safe(textOr(r.Priority, r.DisplayID))}</b>${r.NeedsId?'<br><span class="meta">Needs ID</span>':''}</td>
-    <td><b>${safe(textOr(r["Listing / lead"], "Untitled listing"))}</b><br><span class="meta">${safe(textOr(r["Address / locator"]))} · ${safe(textOr(r.Type))}</span><br><span class="meta" style="font-size:11px">seen ${safe(textOr(r["Date seen"]))} · checked ${safe(textOr(r["Last checked"]))}</span></td>
+    <td><div class="listingcell">${tableThumb(r)}<div><b>${safe(textOr(r["Listing / lead"], "Untitled listing"))}</b><br><span class="meta">${safe(textOr(r["Address / locator"]))} · ${safe(textOr(r.Type))}</span><br><span class="meta" style="font-size:11px">seen ${safe(textOr(r["Date seen"]))} · checked ${safe(textOr(r["Last checked"]))}</span></div></div></td>
     <td><span class="pill ${pillClass(r)}">${volLabel(r)}</span></td>
     <td><span class="pill kindpill ${kindClass(r)}">${safe(r.ListingKind)}</span></td>
     <td>${safe(textOr(r.Neighbourhood))}</td>
