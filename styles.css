@@ -115,6 +115,24 @@ input:focus,select:focus{outline:2px solid var(--green-soft);border-color:var(--
 .flagchip.na{background:var(--gold-soft);color:#8c551b;border-color:#efd3a8;}
 .flagchip.bad{background:#fbe4de;color:var(--red);border-color:#efc6bb;}
 .naflag{color:#8c551b;font-weight:700;}
+.scoretip{position:fixed;z-index:4000;width:280px;max-width:92vw;background:#2b2620;color:#f4efe7;border-radius:12px;padding:11px 13px;box-shadow:0 14px 40px rgba(0,0,0,.32);font:500 12px Inter,sans-serif;pointer-events:none;}
+.scoretip .sthead{display:flex;align-items:baseline;gap:5px;font-family:"Fraunces",serif;margin-bottom:8px;border-bottom:1px solid rgba(255,255,255,.14);padding-bottom:7px;}
+.scoretip .sthead b{font-size:22px;font-weight:600;color:#9fd3bb;}
+.scoretip .sthead b.scorewarn{color:#f0c071;}
+.scoretip .sthead b.scorecrit{color:#f0a08f;}
+.scoretip .sthead span{font-size:11px;color:#b9ae9f;}
+.scoretip .strow{display:grid;grid-template-columns:96px 1fr 40px;align-items:center;gap:8px;margin:4px 0;}
+.scoretip .stlabel{font-size:10.5px;color:#cfc6b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.scoretip .stbar{height:6px;background:rgba(255,255,255,.12);border-radius:999px;overflow:hidden;}
+.scoretip .stbar i{display:block;height:100%;border-radius:999px;background:#6fae90;}
+.scoretip .stbar i.warn{background:#e0a955;}
+.scoretip .stbar i.bad{background:#d8775f;}
+.scoretip .stbar i.na{background:#8c8378;}
+.scoretip .stval{font-size:11px;font-weight:700;text-align:right;color:#f4efe7;}
+.scoretip .stval .stmax{font-weight:500;color:#9a8f80;}
+.scoretip .stval .stna{color:#e0a955;font-weight:800;}
+.scoretip .stfoot{margin-top:8px;padding-top:7px;border-top:1px solid rgba(255,255,255,.14);font-size:10.5px;line-height:1.45;color:#cdbf8f;}
+.scoreval,.scorepill{cursor:help;}
 .sitegroup{margin-bottom:8px;}
 .sitegroup h3{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--gold);margin:14px 0 8px;}
 .archivebar{background:var(--gold-soft);border:1px solid #efd3a8;border-radius:12px;padding:10px 14px;font-size:13px;color:#5d4223;margin-bottom:12px;display:none;}

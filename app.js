@@ -139,7 +139,7 @@ function tableRow(r){
     <td><span class="pill ${pillClass(r)}">${volLabel(r)}</span></td>
     <td><b>${safe(textOr(r["Rent text"], "—"))}</b>${asText(r["Approx monthly share"])?`<br><span class="meta">share ${safe(r["Approx monthly share"])}</span>`:""}</td>
     <td>${driveTxt}${kmTxt?`<br><span class="meta">${kmTxt}</span>`:""}</td>
-    <td><b class="scoreval ${lvl}" title="${safe(scoreBreakdown(r))}">${safe(r.ScoreNum)}</b>${scoreFlag}</td>
+    <td><b class="scoreval ${lvl}">${safe(r.ScoreNum)}</b>${scoreFlag}</td>
     <td><span class="statustext">${safe(textOr(r.Status || r.Action, "—"))}</span></td>
     <td><div class="links tablelinks">${linkButton(r.URL, "Listing")} ${linkButton(routeLink(r), "Route", "route", "No route")}<button class="linkbtn copy" data-copy="${id}" type="button">Copy</button></div></td>
   </tr>
@@ -397,6 +397,57 @@ function scoreFlags(r){
   return chips.length ? `<div class="confirmflags">${chips.join("")}</div>` : "";
 }
 
+/* ---- styled score-breakdown popup on hover (replaces the weak native title) ---- */
+function scoreTipHTML(r){
+  const comps = r.ScoreComponents || [];
+  const rowsHtml = comps.map(c => {
+    const pct = c.na ? 0 : Math.round(c.earned / c.max * 100);
+    const val = c.na ? `<span class="stna">N/A</span>` : `${c.earned}<span class="stmax">/${c.max}</span>`;
+    const barCls = c.na ? "na" : c.level === "bad" ? "bad" : c.level === "warn" ? "warn" : "ok";
+    return `<div class="strow"><span class="stlabel">${safe(c.label)}</span><span class="stbar"><i class="${barCls}" style="width:${pct}%"></i></span><span class="stval">${val}</span></div>`;
+  }).join("");
+  const notes = [];
+  if(Number.isFinite(r.ScoreKnownMax) && r.ScoreKnownMax < 100) notes.push(`scored on ${r.ScoreKnownMax}/100 known points`);
+  if(r.ScoreComputed && (r.ScoreCritUnknown || []).length) notes.push(`⚠ capped at ${r.ScoreCap} — must-have unconfirmed: ${r.ScoreCritUnknown.map(k => SCORE_SHORT[k] || k).join(", ")}`);
+  if(r.ScoreComputed && Number.isFinite(r.ScoreSheet)) notes.push(`sheet had ${r.ScoreSheet}`);
+  if(!r.ScoreComputed) notes.push(`manual ScoreOverride in use`);
+  const lvl = scoreLevelClass(r);
+  return `<div class="sthead"><b class="${lvl}">${safe(r.ScoreNum)}</b><span>/100 · auto-score</span></div>
+    <div class="stbody">${rowsHtml}</div>
+    ${notes.length ? `<div class="stfoot">${safe(notes.join(" · "))}</div>` : ""}`;
+}
+
+let scoreTipEl = null;
+function scoreTip(){ if(!scoreTipEl){ scoreTipEl = document.createElement("div"); scoreTipEl.className = "scoretip"; scoreTipEl.style.display = "none"; document.body.appendChild(scoreTipEl); } return scoreTipEl; }
+function rowForScoreEl(elm){
+  const host = elm.closest("[data-row-id]") || elm.closest("[data-id]") || elm.closest("[data-detail-id]");
+  if(!host) return null;
+  const id = host.dataset.rowId || host.dataset.id || host.dataset.detailId;
+  return rows.find(x => String(x.ID) === String(id));
+}
+function placeScoreTip(target){
+  const tip = scoreTipEl, pad = 10, gap = 8;
+  const rect = target.getBoundingClientRect();
+  let left = rect.left, top = rect.bottom + gap;
+  if(left + tip.offsetWidth > window.innerWidth - pad) left = window.innerWidth - tip.offsetWidth - pad;
+  if(top + tip.offsetHeight > window.innerHeight - pad) top = rect.top - tip.offsetHeight - gap;
+  tip.style.left = Math.max(pad, left) + "px";
+  tip.style.top = Math.max(pad, top) + "px";
+}
+document.addEventListener("mouseover", e => {
+  const t = e.target.closest(".scoreval, .scorepill");
+  if(!t) return;
+  const r = rowForScoreEl(t);
+  if(!r || !Array.isArray(r.ScoreComponents)) return;
+  const tip = scoreTip();
+  tip.innerHTML = scoreTipHTML(r);
+  tip.style.display = "block";
+  placeScoreTip(t);
+});
+document.addEventListener("mouseout", e => {
+  if(scoreTipEl && e.target.closest(".scoreval, .scorepill")) scoreTipEl.style.display = "none";
+});
+
 // Recompute the helper fields the UI relies on (the CSV/Sheet does NOT contain them).
 function deriveListing(o){
   const originalId = asText(o.ID);
@@ -622,7 +673,7 @@ function card(r){
   const rent = textOr(r["Rent text"]);
   const drive = asText(r["Est drive min"]) ? `~${safe(r["Est drive min"])} min` : "drive not entered";
   return `<div class="card${selected}" data-id="${safe(r.ID)}">
-  <div class="cardhead"><div class="pills"><span class="pill ${pillClass(r)}">${volLabel(r)}</span><span class="pill scorepill ${scoreLevelClass(r)}" title="${safe(scoreBreakdown(r))}">#${safe(textOr(r.Priority, r.DisplayID))} · ${safe(r.ScoreNum)}${r.ScoreComputed && Number.isFinite(r.ScoreSheet) && r.ScoreSheet!==r.ScoreNum?` <span class="sheetcmp">(was ${safe(r.ScoreSheet)})</span>`:""}</span><span class="pill kindpill ${kindClass(r)}">${safe(r.ListingKind)}</span>${r.IsNew?'<span class="pill newpill">★ new</span>':''}${asText(r.DuplicateOf)?`<span class="pill warnpill" title="Marked as duplicate of ${safe(r.DuplicateOf)}">dup of ${safe(r.DuplicateOf)}</span>`:''}${r.NeedsId?'<span class="pill warnpill">Needs ID</span>':''}</div>${action}</div>
+  <div class="cardhead"><div class="pills"><span class="pill ${pillClass(r)}">${volLabel(r)}</span><span class="pill scorepill ${scoreLevelClass(r)}">#${safe(textOr(r.Priority, r.DisplayID))} · ${safe(r.ScoreNum)}${r.ScoreComputed && Number.isFinite(r.ScoreSheet) && r.ScoreSheet!==r.ScoreNum?` <span class="sheetcmp">(was ${safe(r.ScoreSheet)})</span>`:""}</span><span class="pill kindpill ${kindClass(r)}">${safe(r.ListingKind)}</span>${r.IsNew?'<span class="pill newpill">★ new</span>':''}${asText(r.DuplicateOf)?`<span class="pill warnpill" title="Marked as duplicate of ${safe(r.DuplicateOf)}">dup of ${safe(r.DuplicateOf)}</span>`:''}${r.NeedsId?'<span class="pill warnpill">Needs ID</span>':''}</div>${action}</div>
   <h3>${safe(textOr(r["Listing / lead"], "Untitled listing"))}</h3>
   ${imageThumb(r)}
   <div class="meta">${safe(textOr(r.Neighbourhood))} · ${safe(textOr(r["Address / locator"]))}</div>
