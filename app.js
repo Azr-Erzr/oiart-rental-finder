@@ -749,15 +749,35 @@ function workflowEditor(r){
   </details>`;
 }
 
+// Builds a warm, specific outreach message tailored to each listing: it
+// references the real address/area, adapts to a room vs. a whole unit, and
+// only asks about the things that are actually still unconfirmed for that row.
 function landlordMessage(r){
-  const listing = asText(r["Listing / lead"]) || "your rental listing";
-  const start = /july/i.test(compact([r.Availability, r["What to verify"]])) ? "July" : "late July or July";
-  return [
-    `Hi, I'm interested in ${listing}.`,
-    `I'm looking for a private bedroom starting ${start} for an OIART student near 502 Newbold St.`,
-    "Could you confirm the total monthly cost, whether internet/utilities are included, whether one outdoor parking spot is available, the exact address or closest intersection, and whether the lease timing works for July-to-July or late July?",
-    "If it is still available, could we also book a viewing? Thanks!"
-  ].join(" ");
+  const addr = asText(r["Address / locator"]);
+  const nb = asText(r.Neighbourhood);
+  const goodAddr = addr && !/\barea\b|approx|unknown|\bmall\b|^n6[a-z]?\s*\d?$/i.test(addr);
+  const hay = compact([r.Type, r["Listing / lead"], r["Criteria fit"]]).toLowerCase();
+  const isUnit = /apartment|studio|bachelor|1-?bed|one bed|condo|townhouse|duplex|\bunit\b/.test(hay) && !/room in|private room/.test(hay);
+  const noun = isUnit ? "place" : "room";
+  const ref = goodAddr ? `your listing at ${addr}` : nb ? `your ${nb} ${noun}` : "your rental listing";
+
+  const julyKnown = truthy(r.JulyConfirmed) || /july/.test(asText(r.Availability).toLowerCase());
+  const timing = julyKnown ? "in July" : "around late July (I can be a little flexible on the exact date)";
+
+  const intro = `Hi! I'm interested in ${ref}. I'm a domestic student starting at OIART (the audio-recording school at 502 Newbold St) and I'm looking for ${isUnit ? "a place" : "a private room"} on roughly a 12-month lease, ideally moving in ${timing}. I'm quiet, tidy, non-smoking, and happy to provide references.`;
+
+  const qs = [];
+  qs.push(julyKnown ? "is it still available?" : "is it still available, and would a July-to-July (or late-July) start work?");
+  qs.push("the total monthly cost, including any utilities or fees?");
+  if(r.NeedsInternet || !r.HasInternet) qs.push("whether internet is included (and roughly the speed)?");
+  if(r.NeedsParking || !r.HasParking) qs.push("whether one outdoor parking spot is available?");
+  if(r.NeedsAddress || !goodAddr) qs.push("the exact address or nearest major intersection?");
+  if(!asText(r.Furnishing)) qs.push(`whether the ${noun} is furnished or unfurnished?`);
+  if(!isUnit) qs.push("who else lives there, and how many people share the kitchen and bathroom?");
+
+  const body = "If it's still open, could you let me know:\n" + qs.map(q => "• " + q).join("\n");
+  const close = "I'd also love to set up a viewing — in person or a quick video walkthrough works for me. Thanks so much!";
+  return `${intro}\n\n${body}\n\n${close}`;
 }
 
 async function copyLandlordMessage(id){
