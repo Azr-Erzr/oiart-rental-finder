@@ -105,6 +105,19 @@ function detailCell(label, value){
   if(!v) return "";
   return `<div class="ditem"><span class="dlabel">${safe(label)}</span><span class="dval">${safe(v)}</span></div>`;
 }
+// Clean 1..N display rank from the decimal Priority order (decimals are an
+// insert-between convention kept for sorting; the UI shows tidy integers).
+// Ranked separately for active vs archived so each view reads 1,2,3,…
+function computeRanks(){
+  const groups = { active: [], archived: [] };
+  rows.forEach(r => (isArchived(r) ? groups.archived : groups.active).push(r));
+  Object.values(groups).forEach(list => {
+    list.sort((a, b) => num(a.PriorityNum, 1e9) - num(b.PriorityNum, 1e9));
+    list.forEach((r, i) => { r.RankDisplay = i + 1; });
+  });
+}
+function rankLabel(r){ return Number.isFinite(r.RankDisplay) ? r.RankDisplay : textOr(r.Priority, r.DisplayID); }
+function rankTitle(r){ const p = asText(r.Priority); return p ? `Priority ${p}` : "No priority set"; }
 // One compact main row + a hidden detail row (toggled by the ▸ button) so the
 // table stays scannable and the heavy fields only appear on demand.
 function tableRow(r){
@@ -134,7 +147,7 @@ function tableRow(r){
 
   return `<tr data-row-id="${id}" class="mainrow ${r.IsNew?'rownew ':''}${sel}">
     <td class="colexpand"><button class="expandbtn" data-expand="${id}" aria-label="Show full details" title="Show full details">▸</button></td>
-    <td><b class="rank">${safe(textOr(r.Priority, r.DisplayID))}</b>${r.NeedsId?'<br><span class="meta">Needs ID</span>':''}</td>
+    <td><b class="rank" title="${safe(rankTitle(r))}">${safe(rankLabel(r))}</b>${r.NeedsId?'<br><span class="meta">Needs ID</span>':''}</td>
     <td><div class="listingcell">${tableThumb(r)}<div class="listinginfo"><b class="listingtitle">${safe(textOr(r["Listing / lead"], "Untitled listing"))}</b><div class="meta">${safe(textOr(r.Neighbourhood))}${asText(r.Type)?` · ${safe(r.Type)}`:""}</div><div class="kindline"><span class="pill kindpill ${kindClass(r)}">${safe(r.ListingKind)}</span>${r.IsNew?'<span class="pill newpill">★ new</span>':''}${dup}</div></div></div></td>
     <td><span class="pill ${pillClass(r)}">${volLabel(r)}</span></td>
     <td><b>${safe(textOr(r["Rent text"], "—"))}</b>${asText(r["Approx monthly share"])?`<br><span class="meta">share ${safe(r["Approx monthly share"])}</span>`:""}</td>
@@ -629,7 +642,7 @@ if(hasMap){
 
 function iconFor(r){
   const cls = r==="oiart" ? "oiart" : volClass(r)+(r.IsNew?" isnew":"");
-  const label = r==="oiart" ? "★" : safe(r.Priority || r.DisplayID || r.ID);
+  const label = r==="oiart" ? "★" : safe(rankLabel(r));
   return L.divIcon({className:"",html:`<div class="marker-label ${cls}">${label}</div>`,iconSize:[30,30],iconAnchor:[15,15],popupAnchor:[0,-14]});
 }
 if(hasMap){
@@ -643,7 +656,7 @@ let markers=[], markerById={}, currentFilteredList=[];
 let selectedListingId = "";
 let hasRenderedData = false;
 function popup(r){
-  return `<h3>${safe(textOr(r.Priority, r.DisplayID))}. ${safe(textOr(r["Listing / lead"], "Untitled listing"))}</h3>
+  return `<h3>${safe(rankLabel(r))}. ${safe(textOr(r["Listing / lead"], "Untitled listing"))}</h3>
   ${popupImage(r)}
   <span class="pill ${pillClass(r)}">${volLabel(r)}</span><span class="pill scorepill ${scoreLevelClass(r)}" title="${safe(scoreBreakdown(r))}">Score ${safe(r.ScoreNum)}</span><span class="pill kindpill ${kindClass(r)}">${safe(r.ListingKind)}</span>${r.IsNew?'<span class="pill newpill">★ new</span>':''}<br>
   <b>Area:</b> ${safe(textOr(r.Neighbourhood))}<br><b>Locator:</b> ${safe(textOr(r["Address / locator"]))}<br>
@@ -673,7 +686,7 @@ function card(r){
   const rent = textOr(r["Rent text"]);
   const drive = asText(r["Est drive min"]) ? `~${safe(r["Est drive min"])} min` : "drive not entered";
   return `<div class="card${selected}" data-id="${safe(r.ID)}">
-  <div class="cardhead"><div class="pills"><span class="pill ${pillClass(r)}">${volLabel(r)}</span><span class="pill scorepill ${scoreLevelClass(r)}">#${safe(textOr(r.Priority, r.DisplayID))} · ${safe(r.ScoreNum)}${r.ScoreComputed && Number.isFinite(r.ScoreSheet) && r.ScoreSheet!==r.ScoreNum?` <span class="sheetcmp">(was ${safe(r.ScoreSheet)})</span>`:""}</span><span class="pill kindpill ${kindClass(r)}">${safe(r.ListingKind)}</span>${r.IsNew?'<span class="pill newpill">★ new</span>':''}${asText(r.DuplicateOf)?`<span class="pill warnpill" title="Marked as duplicate of ${safe(r.DuplicateOf)}">dup of ${safe(r.DuplicateOf)}</span>`:''}${r.NeedsId?'<span class="pill warnpill">Needs ID</span>':''}</div>${action}</div>
+  <div class="cardhead"><div class="pills"><span class="pill ${pillClass(r)}">${volLabel(r)}</span><span class="pill scorepill ${scoreLevelClass(r)}" title="${safe(rankTitle(r))}">#${safe(rankLabel(r))} · ${safe(r.ScoreNum)}${r.ScoreComputed && Number.isFinite(r.ScoreSheet) && r.ScoreSheet!==r.ScoreNum?` <span class="sheetcmp">(was ${safe(r.ScoreSheet)})</span>`:""}</span><span class="pill kindpill ${kindClass(r)}">${safe(r.ListingKind)}</span>${r.IsNew?'<span class="pill newpill">★ new</span>':''}${asText(r.DuplicateOf)?`<span class="pill warnpill" title="Marked as duplicate of ${safe(r.DuplicateOf)}">dup of ${safe(r.DuplicateOf)}</span>`:''}${r.NeedsId?'<span class="pill warnpill">Needs ID</span>':''}</div>${action}</div>
   <h3>${safe(textOr(r["Listing / lead"], "Untitled listing"))}</h3>
   ${imageThumb(r)}
   <div class="meta">${safe(textOr(r.Neighbourhood))} · ${safe(textOr(r["Address / locator"]))}</div>
@@ -937,6 +950,7 @@ function renderLeadPanel(){
 }
 
 function render(options={}){
+  computeRanks();
   const list=filtered();
   currentFilteredList=list;
   if(selectedListingId && !list.some(r => String(r.ID) === String(selectedListingId))) selectedListingId = "";
