@@ -4,77 +4,113 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>OIART Rental Finder · London ON</title>
+<meta name="description" content="Every rental lead near OIART scored 0–100, mapped, and tracked — commute, cost, parking, privacy, lease timing and trust.">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500;1,9..144,600&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <div class="appbar">
-  <span class="brand">OIART Rental Finder</span>
-  <span class="tag" id="leadCountTag">London, ON · scored & mapped</span>
+  <span class="brand"><span class="brandmark" aria-hidden="true">⌂</span>OIART Rental Finder</span>
+  <span class="tag" id="leadCountTag">London, ON · scored &amp; mapped</span>
+  <nav class="topnav" aria-label="Sections">
+    <a href="#board">Map</a>
+    <a href="#alltable">Table</a>
+    <a href="#sites-panel">Sites</a>
+  </nav>
   <span class="spacer"></span>
   <span class="sourcebadge" id="sourceBadge">Loading data...</span>
-  <button class="dl" id="downloadMaster" type="button" title="Download every listing (all columns) as a CSV">⬇ Export master CSV</button>
+  <button class="dl" id="downloadMaster" type="button" title="Download every listing (all columns) as a CSV"><span>⬇ Export master CSV</span></button>
 </div>
 
-<div class="hero">
-  <h1>Find a place near OIART</h1>
-  <p>Every lead scored 0–100 on commute, cost, parking/internet, privacy, lease timing and trust — then plotted against OIART (502 Newbold St) with 5 km and 10 km rings. Filter, sort, click a pin, then open the listing or route. <b>Vol 1</b> = core budget fits; <b>Vol 2</b> = stretch/lifestyle. Highlighted leads were added this round. Scores now fold in <b>neighbourhood character</b> (quiet/nature/walkability), so a peaceful Pond Mills street can edge out a busier White Oaks one a minute closer. Archive anything dead with the trash icon; it hides the lead from Active and syncs that archived state to the Sheet when write-back is configured.</p>
-</div>
+<header class="hero" data-reveal>
+  <div class="hero-orbs" aria-hidden="true"><i class="orb o1"></i><i class="orb o2"></i><i class="orb o3"></i></div>
+  <span class="herokicker"><i class="livedot" aria-hidden="true"></i>Live tracker · London, Ontario</span>
+  <h1>Find the <em>right place</em> near OIART</h1>
+  <p class="lead">Every lead scored 0–100 on commute, cost, parking &amp; internet, privacy, lease timing and trust — then plotted against OIART (502 Newbold St) with 5&nbsp;km and 10&nbsp;km rings. Filter, sort, click a pin, then open the listing or route.</p>
+  <details class="howit">
+    <summary>How the board works</summary>
+    <div class="howitbody">
+      <p><b>Vol 1</b> = core budget fits; <b>Vol 2</b> = stretch/lifestyle options. Highlighted leads were added this round. Scores fold in <b>neighbourhood character</b> (quiet/nature/walkability), so a peaceful Pond Mills street can edge out a busier White Oaks one a minute closer.</p>
+      <p>Hover any score for its full component breakdown. Orange <b>Confirm</b> chips mark details the listing never stated — the score is honest about what's still unknown, and a missing must-have (location, price, parking) caps it. Archive anything dead with the trash icon; it hides the lead from Active and syncs to the Sheet when write-back is configured. The spreadsheet is the source of truth — edit it, then hit Refresh.</p>
+    </div>
+  </details>
+</header>
 
 <div class="wrap">
-  <div class="kpis" id="kpis"></div>
+  <div class="kpis" id="kpis" data-reveal style="--d:.06s"></div>
 
-  <div class="toolbar">
+  <div class="toolbar" data-reveal style="--d:.12s">
     <div class="fields">
-      <div><label>Search</label><input id="search" placeholder="street, area, 'parking', 'basement'…"></div>
-      <div><label>Volume</label><select id="volume"><option value="">All</option><option value="Vol 1">Vol 1 · core fits</option><option value="Vol 2">Vol 2 · stretch</option></select></div>
-      <div><label>Neighbourhood</label><select id="neighbourhood"><option value="">All</option></select></div>
-      <div><label>Source</label><select id="source"><option value="">All</option></select></div>
-      <div><label>Max drive (min)</label><input id="drive" type="number" min="1" placeholder="e.g. 15"></div>
+      <div class="searchfield"><label for="search">Search</label><input id="search" placeholder="street, area, 'parking', 'basement'…"></div>
+      <div><label for="volume">Volume</label><select id="volume"><option value="">All</option><option value="Vol 1">Vol 1 · core fits</option><option value="Vol 2">Vol 2 · stretch</option></select></div>
+      <div><label for="neighbourhood">Neighbourhood</label><select id="neighbourhood"><option value="">All</option></select></div>
+      <div><label for="source">Source</label><select id="source"><option value="">All</option></select></div>
+      <div><label for="drive">Max drive (min)</label><input id="drive" type="number" min="1" placeholder="e.g. 15"></div>
     </div>
-    <div class="chips">
-      <button class="btn" id="under1000">≤ $1,000 all-in</button>
-      <button class="btn" id="parking">Parking</button>
-      <button class="btn" id="internet">Internet incl.</button>
-      <button class="btn new" id="newonly">★ New this round</button>
-      <button class="btn" data-filter="notContacted">Not contacted</button>
-      <button class="btn" data-filter="waitingReply">Waiting reply</button>
-      <button class="btn" data-filter="viewingBooked">Viewing booked</button>
-      <button class="btn" data-filter="goodOption">Good option</button>
-      <button class="btn" data-filter="needsParking">Needs parking verify</button>
-      <button class="btn" data-filter="needsInternet">Needs internet verify</button>
-      <button class="btn" data-filter="needsAddress">Needs address</button>
-      <button class="btn" data-filter="needsJuly">Needs July</button>
-      <button class="btn" id="refresh" title="Re-fetch the latest data from the Google Sheet">↻ Refresh data</button>
-      <button class="btn" id="exportCsv">Export filtered CSV</button>
-      <button class="btn" id="printView">Print / share view</button>
-      <button class="btn ghost" id="reset">Reset</button>
+    <div class="chipgroups">
+      <div class="chipgroup">
+        <span class="grouplabel">Quick filters</span>
+        <div class="chips">
+          <button class="btn" id="under1000">≤ $1,000 all-in</button>
+          <button class="btn" id="parking">Parking</button>
+          <button class="btn" id="internet">Internet incl.</button>
+          <button class="btn new" id="newonly">★ New this round</button>
+        </div>
+      </div>
+      <div class="chipgroup">
+        <span class="grouplabel">Workflow</span>
+        <div class="chips">
+          <button class="btn" data-filter="notContacted">Not contacted</button>
+          <button class="btn" data-filter="waitingReply">Waiting reply</button>
+          <button class="btn" data-filter="viewingBooked">Viewing booked</button>
+          <button class="btn" data-filter="goodOption">Good option</button>
+        </div>
+      </div>
+      <div class="chipgroup">
+        <span class="grouplabel">Needs check</span>
+        <div class="chips">
+          <button class="btn" data-filter="needsParking">Parking verify</button>
+          <button class="btn" data-filter="needsInternet">Internet verify</button>
+          <button class="btn" data-filter="needsAddress">Address</button>
+          <button class="btn" data-filter="needsJuly">July start</button>
+        </div>
+      </div>
+      <div class="chipgroup actions">
+        <span class="grouplabel">Actions</span>
+        <div class="chips">
+          <button class="btn act" id="refresh" title="Re-fetch the latest data from the Google Sheet">↻ Refresh</button>
+          <button class="btn act" id="exportCsv">Export filtered CSV</button>
+          <button class="btn act" id="printView">Print / share</button>
+          <button class="btn ghost" id="reset">Reset all</button>
+        </div>
+      </div>
     </div>
   </div>
 
   <div id="dataStatus" style="display:none"></div>
 
-  <div class="grid">
+  <section id="board" class="grid" data-reveal style="--d:.16s">
     <div id="map"></div>
     <div class="side">
-      <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px">
-        <h2>Leads <span id="count" style="font-family:Inter;font-weight:600;font-size:13px;color:var(--muted)"></span></h2>
+      <div class="sidehead">
+        <h2>Leads <span id="count" class="countnote"></span></h2>
         <div class="viewtabs">
           <button class="viewtab active" id="tabActive">Active</button>
           <button class="viewtab" id="tabArchived">Archived</button>
         </div>
-        <button class="viewtab" id="showUnmapped" title="Also list filtered leads that have no map pin (no/!approx coordinates)">+ Unmapped</button>
+        <button class="viewtab unmapped" id="showUnmapped" title="Also list filtered leads that have no map pin (no/approx coordinates)">+ Unmapped</button>
       </div>
       <div class="sub" id="sideSub">Best fit first. Click a card to focus its pin. The trash icon archives a lead; with write-back configured, that updates the Sheet too.</div>
       <div class="archivebar" id="archivebar"></div>
       <div id="cards"></div>
     </div>
-  </div>
+  </section>
 
-  <div class="panel">
+  <section id="alltable" class="panel" data-reveal>
+    <div class="kicker">The full board</div>
     <h2>All leads — sortable</h2>
     <div class="sub">Click a column header to sort, or the <b>▸</b> button to expand a row's full details (parking, internet, contact, score breakdown…). Yellow rows were added this round.</div>
     <div class="tablewrap">
@@ -93,19 +129,34 @@
         <tbody id="tbody"></tbody>
       </table>
     </div>
-  </div>
+  </section>
 
-  <div class="panel">
-    <h2>Where to search — sites & filters</h2>
+  <section id="sites-panel" class="panel" data-reveal>
+    <div class="kicker">The playbook</div>
+    <h2>Where to search — sites &amp; filters</h2>
     <div class="sub">The team's core sites plus new ones added this round (highlighted). Same filter discipline applies everywhere.</div>
     <div class="sitegrid" id="sites"></div>
-  </div>
+  </section>
 
-  <div class="note"><b>Honest notes:</b> map pins are exact where an address was given, otherwise a neighbourhood centroid (so a few sit at the area's middle). Drive times are estimates — confirm in Google Maps at your real commute time. Several new room leads still need parking / internet / July start confirmed; each says what to check. A few Kijiji/Facebook entries point to a live search page because their detail pages block automated reads. The spreadsheet is the source of truth — edit it, then hit Refresh data.</div>
+  <aside class="note" data-reveal>
+    <span class="noteicon" aria-hidden="true">ⓘ</span>
+    <div><b>Honest notes:</b> map pins are exact where an address was given, otherwise a neighbourhood centroid (so a few sit at the area's middle). Drive times are estimates — confirm in Google Maps at your real commute time. Several new room leads still need parking / internet / July start confirmed; each says what to check. A few Kijiji/Facebook entries point to a live search page because their detail pages block automated reads. The spreadsheet is the source of truth — edit it, then hit Refresh data.</div>
+  </aside>
 </div>
 
-<footer>OIART Rental Finder · built on your team's methodology & cleaned data · <span id="footerCount">…</span> leads · London, Ontario</footer>
+<footer data-reveal>
+  <div class="footbrand"><span class="brandmark" aria-hidden="true">⌂</span>OIART Rental Finder</div>
+  <div class="footmeta">Built on the team's methodology &amp; cleaned data · <span id="footerCount">…</span> leads · London, Ontario</div>
+  <div class="footlinks">
+    <a href="Build_Your_Own_Search_Tracker_Guide.pdf" download>Build-your-own guide (PDF)</a>
+    <span aria-hidden="true">·</span>
+    <a href="https://github.com/Azr-Erzr/oiart-rental-finder/blob/main/SCORING_METHODOLOGY.md" target="_blank" rel="noopener">Scoring methodology</a>
+    <span aria-hidden="true">·</span>
+    <a href="https://github.com/Azr-Erzr/oiart-rental-finder" target="_blank" rel="noopener">GitHub</a>
+  </div>
+</footer>
 
 <script src="app.js"></script>
+<script src="enhance.js"></script>
 </body>
 </html>
