@@ -18,7 +18,7 @@ const SHEET_TAB_CANDIDATES = {
    Leave "" for the default read-only mirror. Paste an Apps Script /exec URL to
    let workflow edits write straight into the Sheet. */
 const WRITE_URL = "https://script.google.com/macros/s/AKfycbxOqmjH0VJ_K-sgKEWkoSP_PVeWVhkhW2O8ITX6UdLg3sbHvXzBj-pKumpLsdzFjuK7/exec";
-const UPDATED_BY = "OIART site";
+const UPDATED_BY = "Home Finder site";
 /* Optional shared secret to stop drive-by writes to the open Apps Script endpoint.
    Leave "" to keep the current behaviour. To turn it on: pick any random string,
    paste the SAME value here and into WRITE_TOKEN in apps-script/OIART_WRITEBACK.gs,
@@ -28,6 +28,47 @@ const CSV_FALLBACKS = {
   listings: "oiart_listings.csv",
   sites: "oiart_sites.csv"
 };
+
+/* ============================================================================
+   GENERIC APP CONFIG — your places, your budgets.
+   The tool is destination-agnostic: the user sets up to MAX_POIS anchor places
+   (work, school, family…) in the "My places" panel. Distances, map rings and
+   route links are computed against those. Stored in this browser only.
+   ========================================================================== */
+const APP_NAME = "Home Finder";
+const MAX_POIS = 3;
+const DEFAULT_CONFIG = {
+  pois: [],            // up to MAX_POIS of {name, lat, lon}
+  budgetRent: 1000,    // monthly all-in target for rentals
+  budgetSale: 500000,  // purchase-price target for for-sale listings
+  routePoi: 0          // which place the Route buttons currently point at
+};
+let config = loadConfig();
+function loadConfig(){
+  try{
+    const c = JSON.parse(localStorage.getItem("hf_config"));
+    if(c && typeof c === "object") return {...DEFAULT_CONFIG, ...c, pois: (Array.isArray(c.pois) ? c.pois : []).slice(0, MAX_POIS)};
+  }catch(e){}
+  return {...DEFAULT_CONFIG, pois: []};
+}
+function saveConfig(){ try{ localStorage.setItem("hf_config", JSON.stringify(config)); }catch(e){} }
+function getPois(){
+  return (config.pois || []).filter(p => p && Number.isFinite(Number(p.lat)) && Number.isFinite(Number(p.lon)));
+}
+function activePoi(){
+  const ps = getPois();
+  if(!ps.length) return null;
+  return ps[Math.min(num(config.routePoi, 0), ps.length - 1)];
+}
+function poiName(p, i){ return asText(p && p.name) || `Place ${i + 1}`; }
+function budgetFor(market){ return market === "sale" ? num(config.budgetSale, 500000) : num(config.budgetRent, 1000); }
+function fmtMoney(n){ return n >= 10000 ? "$" + Math.round(n / 1000) + "k" : "$" + Number(n).toLocaleString(); }
+function haversineKm(aLat, aLon, bLat, bLon){
+  const R = 6371, toR = x => x * Math.PI / 180;
+  const dLat = toR(bLat - aLat), dLon = toR(bLon - aLon);
+  const s = Math.sin(dLat/2)**2 + Math.cos(toR(aLat)) * Math.cos(toR(bLat)) * Math.sin(dLon/2)**2;
+  return 2 * R * Math.asin(Math.sqrt(s));
+}
 
 const WORKFLOW_COLUMNS = [
   "Status","Contacted","LastContacted","Response","ViewingBooked","ViewingDate",
@@ -124,8 +165,8 @@ function tableRow(r){
   const id = safe(r.ID);
   const sel = String(selectedListingId) === String(r.ID) ? "selectedrow" : "";
   const lvl = scoreLevelClass(r);
-  const driveTxt = asText(r["Est drive min"]) ? `${safe(r["Est drive min"])} min` : "—";
-  const kmTxt = asText(r["Km straight-line"]) ? `${safe(r["Km straight-line"])} km` : "";
+  const driveTxt = asText(r["Est drive min"]) ? `${safe(r["Est drive min"])} min` : (Number.isFinite(r.KmNearest) ? `${r.KmNearest.toFixed(1)} km` : "—");
+  const kmTxt = Number.isFinite(r.KmNearest) && asText(r["Est drive min"]) ? `${r.KmNearest.toFixed(1)} km → ${safe(r.NearestPoiName)}` : (asText(r["Km straight-line"]) ? `${safe(r["Km straight-line"])} km` : "");
   const dup = asText(r.DuplicateOf) ? `<span class="pill warnpill" title="Duplicate of ${safe(r.DuplicateOf)}">dup ${safe(r.DuplicateOf)}</span>` : "";
   const scoreFlag = lvl ? `<span class="scoreflag ${lvl}" title="A must-have criterion is unconfirmed — expand for details">⚠</span>` : "";
 
@@ -133,6 +174,7 @@ function tableRow(r){
     detailCell("Parking", textOr(r.Parking, "not stated")),
     detailCell("Internet / utilities", textOr(r["Internet / utilities"], "not stated")),
     detailCell("Availability", textOr(r.Availability, "not stated")),
+    r.PoiKmText ? detailCell("Distance to your places", r.PoiKmText) : "",
     detailCell("Contact", r.ContactedBool ? compact(["Contacted", r.LastContacted]) : compact(["Not contacted", r.Response])),
     detailCell("Decision", compact([r.Decision, r.ViewingDate ? ("viewing " + r.ViewingDate) : ""])),
     r.ScamRisk ? detailCell("Scam risk", r.ScamRisk) : "",
@@ -144,11 +186,13 @@ function tableRow(r){
   ].join("");
   const flags = scoreFlags(r);
   const confirmRow = flags ? `<div class="ditem ditem-full"><span class="dlabel">Still to confirm</span><span>${flags}</span></div>` : "";
+  const routesHtml = routeLinksHtml(r);
+  const routesRow = routesHtml ? `<div class="ditem ditem-full"><span class="dlabel">Routes</span><span class="links" style="margin-top:2px">${routesHtml}</span></div>` : "";
 
   return `<tr data-row-id="${id}" class="mainrow ${r.IsNew?'rownew ':''}${sel}">
     <td class="colexpand"><button class="expandbtn" data-expand="${id}" aria-label="Show full details" title="Show full details">▸</button></td>
     <td><b class="rank" title="${safe(rankTitle(r))}">${safe(rankLabel(r))}</b>${r.NeedsId?'<br><span class="meta">Needs ID</span>':''}</td>
-    <td><div class="listingcell">${tableThumb(r)}<div class="listinginfo"><b class="listingtitle">${safe(textOr(r["Listing / lead"], "Untitled listing"))}</b><div class="meta">${safe(textOr(r.Neighbourhood))}${asText(r.Type)?` · ${safe(r.Type)}`:""}</div><div class="kindline"><span class="pill kindpill ${kindClass(r)}">${safe(r.ListingKind)}</span>${r.IsNew?'<span class="pill newpill">★ new</span>':''}${dup}</div></div></div></td>
+    <td><div class="listingcell">${tableThumb(r)}<div class="listinginfo"><b class="listingtitle">${safe(textOr(r["Listing / lead"], "Untitled listing"))}</b><div class="meta">${safe(textOr(r.Neighbourhood))}${asText(r.Type)?` · ${safe(r.Type)}`:""}</div><div class="kindline">${r.MarketType==="sale"?'<span class="pill salepill">For sale</span>':''}<span class="pill kindpill ${kindClass(r)}">${safe(r.ListingKind)}</span>${r.IsNew?'<span class="pill newpill">★ new</span>':''}${dup}</div></div></div></td>
     <td><span class="pill ${pillClass(r)}">${volLabel(r)}</span></td>
     <td><b>${safe(textOr(r["Rent text"], "—"))}</b>${asText(r["Approx monthly share"])?`<br><span class="meta">share ${safe(r["Approx monthly share"])}</span>`:""}</td>
     <td>${driveTxt}${kmTxt?`<br><span class="meta">${kmTxt}</span>`:""}</td>
@@ -156,14 +200,27 @@ function tableRow(r){
     <td><span class="statustext">${safe(textOr(r.Status || r.Action, "—"))}</span></td>
     <td><div class="links tablelinks">${linkButton(r.URL, "Listing")} ${linkButton(routeLink(r), "Route", "route", "No route")}<button class="linkbtn copy" data-copy="${id}" type="button">Copy</button></div></td>
   </tr>
-  <tr class="detailrow" data-detail-id="${id}" hidden><td class="colexpand"></td><td colspan="8"><div class="detailgrid">${detail}${confirmRow}</div></td></tr>`;
+  <tr class="detailrow" data-detail-id="${id}" hidden><td class="colexpand"></td><td colspan="8"><div class="detailgrid">${detail}${routesRow}${confirmRow}</div></td></tr>`;
 }
-function routeLink(r){
-  const explicit = safeUrl(r["Maps link"]);
-  if(explicit) return explicit;
-  if(!asText(r["Address / locator"]) && !asText(r.Neighbourhood)) return "";
-  const dest = compact([r["Address / locator"], r.Neighbourhood, "London ON"]);
-  return `https://www.google.com/maps/dir/?api=1&origin=502+Newbold+St+London+ON&destination=${encodeURIComponent(dest)}`;
+/* Routes: listing → one of the user's places. The Route buttons on cards and
+   table rows follow the global "Route to" selector (activePoi). Popups and
+   expanded rows offer a route per place. With no places configured, the
+   sheet's own Maps link (if any) is the fallback. */
+function routeLinkTo(r, poi){
+  if(!poi) return safeUrl(r["Maps link"]);
+  const hasLL = Number.isFinite(num(r.LatNum,NaN)) && Number.isFinite(num(r.LonNum,NaN));
+  const origin = hasLL ? `${r.LatNum},${r.LonNum}` : compact([r["Address / locator"], r.Neighbourhood]);
+  if(!origin) return "";
+  return `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(poi.lat + "," + poi.lon)}`;
+}
+function routeLink(r){ return routeLinkTo(r, activePoi()); }
+function routeLinksHtml(r){
+  const ps = getPois();
+  if(!ps.length){
+    const fall = safeUrl(r["Maps link"]);
+    return fall ? linkButton(fall, "Route", "route") : `<span class="linkbtn disabled" title="Set your places (📍 My places) to get routes">No route info</span>`;
+  }
+  return ps.map((p,i) => linkButton(routeLinkTo(r,p), "→ " + poiName(p,i), "route", "No route")).join(" ");
 }
 function csvEscape(v){
   const s = String(v ?? "");
@@ -235,17 +292,9 @@ async function loadCsv(path, kind){
    sheet fields so they stay live: edit rent/drive/parking and the score moves.
    A manual "ScoreOverride" column (if present and numeric) wins, so anything you
    hand-tune is preserved. The sheet's original "Score" is kept for comparison. */
-const CORE_AREAS = /pond mills|glen cairn|deveron|frontenac|commissioners|white oaks|jalna|ernest|exeter|bradley|ashley|millbank|westminster|southdale|adelaide|wellington|highland|wilkins|base ?line|gordon|southcrest/i;
-const STRETCH_AREAS = /old south|wortley|grand ave|ridout|brighton|winston|westmount|wonderland|garden vista|byron|lambeth|longwoods|springbank/i;
-const AVOID_AREAS = /fanshawe|carling|masonville|huron heights|north london|downtown/i;
-
-function areaTier(r){
-  const hay = compact([r.Neighbourhood, r["Address / locator"]]).toLowerCase();
-  if(AVOID_AREAS.test(hay)) return "avoid";
-  if(CORE_AREAS.test(hay))  return "core";
-  if(STRETCH_AREAS.test(hay)) return "stretch";
-  return "unknown";
-}
+/* Location scoring is fully generic: it uses the sheet's drive-time estimate
+   when present, otherwise the live straight-line distance to the nearest of
+   the user's configured places. No hardcoded neighbourhoods. */
 
 /* Graduated, honest scoring. Each component returns either points it earned
    (rewarding what the listing actually states) OR na:true when the listing is
@@ -255,8 +304,8 @@ function areaTier(r){
    show a red flag. Total = earned / (sum of known maxes) * 100, so it's always
    "of what we actually know, here's the fit." */
 const SCORE_SHORT = {
-  location:"commute", cost:"rent", parking:"parking", internet:"internet",
-  privacy:"room type", lease:"lease timing", trust:"listing"
+  location:"commute", cost:"price", parking:"parking", internet:"internet",
+  privacy:"home type", lease:"timing", trust:"listing"
 };
 /* "Must-have" criteria: if any of these are N/A (never stated), the score is
    capped one §7 band per missing item and the score pill turns amber/red — a
@@ -267,41 +316,46 @@ const CRITICAL_KEYS = ["location", "cost", "parking"];
 const CRITICAL_CAP = {0:100, 1:79, 2:69};
 
 function computeScore(r){
+  const market = r.MarketType || "rent";
   const comps = [];
   const push = (key, label, max, res) => {
     if(res.na) comps.push({key, label, max, earned:0, na:true, level:"na", note:res.note || (label + " not stated")});
     else comps.push({key, label, max, earned:Math.max(0, Math.min(max, res.pts)), na:false, level:res.level || "ok", note:res.note || ""});
   };
 
-  // Location + commute /30
+  // Location + commute /30 — priority-weighted distance to the user's places
+  // (POI 1 counts most), blended with the sheet's drive estimate when present.
   push("location", "Location / commute", 30, (function(){
-    const tier = areaTier(r), d = r.DriveNum;
-    if(!Number.isFinite(d) && tier === "unknown") return {na:true, note:"Commute / area not stated"};
-    let pts, note = "";
-    if(Number.isFinite(d)){
-      if(d <= 10) pts = 30; else if(d <= 15) pts = 26; else if(d <= 20) pts = 18; else if(d <= 25) pts = 12; else pts = 8;
-    } else {
-      pts = tier === "core" ? 24 : tier === "stretch" ? 18 : 10; note = "drive estimated from area";
+    const d = r.DriveNum, km = r.KmWeighted;
+    const driveBand = v => v <= 10 ? 30 : v <= 15 ? 26 : v <= 20 ? 18 : v <= 25 ? 12 : 8;
+    const kmBand = v => v <= 4 ? 30 : v <= 7 ? 26 : v <= 11 ? 18 : v <= 16 ? 12 : 8;
+    if(Number.isFinite(km)){
+      let pts = kmBand(km);
+      let note = `weighted ${km.toFixed(1)} km${r.PoiKmText ? " (" + r.PoiKmText + ")" : ""}`;
+      if(Number.isFinite(d)){ pts = Math.round((pts + driveBand(d)) / 2); note += ` · drive ~${d} min`; }
+      return {pts, level: pts <= 12 ? "warn" : "ok", note};
     }
-    if(tier === "avoid") pts = Math.min(pts, 14);
-    else if(tier === "stretch" && pts > 26) pts = 26;
-    return {pts, level: pts <= 12 ? "warn" : "ok", note};
+    if(Number.isFinite(d)) return {pts: driveBand(d), level: driveBand(d) <= 12 ? "warn" : "ok", note: "sheet drive estimate"};
+    return {na:true, note:"No distance known — set My places, or add coords / drive time"};
   })());
 
-  // Cost + all-in value /20
-  push("cost", "Cost / all-in value", 20, (function(){
-    const rent = r.RentNum;
-    if(!Number.isFinite(rent)) return {na:true, note:"Rent / monthly share not stated"};
-    const allIn = r.HasInternet || /all|incl/i.test(asText(r["Internet / utilities"]));
+  // Cost / value /20 — graduated against the market-specific budget target,
+  // so $1,000 rentals and $500k houses score on the same honest curve.
+  push("cost", market === "sale" ? "Price vs budget" : "Cost / all-in value", 20, (function(){
+    const v = r.RentNum;
+    if(!Number.isFinite(v)) return {na:true, note:"Price not stated"};
+    const b = budgetFor(market);
+    const allIn = market !== "sale" && (r.HasInternet || /all|incl/i.test(asText(r["Internet / utilities"])));
+    const ratio = v / b;
     let pts;
-    if(rent <= 900) pts = allIn ? 20 : 18;
-    else if(rent <= 1000) pts = allIn ? 19 : 16;
-    else if(rent <= 1150) pts = 14;
-    else if(rent <= 1300) pts = 11;
-    else if(rent <= 1500) pts = 8;
-    else if(rent <= 1800) pts = 5;
+    if(ratio <= 0.9) pts = allIn ? 20 : 18;
+    else if(ratio <= 1.0) pts = allIn ? 19 : 16;
+    else if(ratio <= 1.15) pts = 14;
+    else if(ratio <= 1.3) pts = 11;
+    else if(ratio <= 1.5) pts = 8;
+    else if(ratio <= 1.8) pts = 5;
     else pts = 3;
-    return {pts, level: rent > 1500 ? "warn" : "ok"};
+    return {pts, level: ratio > 1.5 ? "warn" : "ok", note: `${Math.round(ratio * 100)}% of ${fmtMoney(b)} target`};
   })());
 
   // Parking /10 (rubric's parking+internet 15, split 10/5 so each can be N/A)
@@ -313,37 +367,54 @@ function computeScore(r){
     return {na:true, note:"Parking not confirmed"};
   })());
 
-  // Internet / utilities /5
-  push("internet", "Internet / utilities", 5, (function(){
-    const t = asText(r["Internet / utilities"]).toLowerCase();
-    if(truthy(r.InternetConfirmed) || r.HasInternet || /all|incl/.test(t)) return {pts:5, note:"included"};
-    if(/partial|some|hydro/.test(t)) return {pts:3, level:"warn", note:"partial"};
-    if(/no internet|not included|extra/.test(t)) return {pts:2, level:"warn", note:"internet extra"};
-    return {na:true, note:"Internet / utilities not confirmed"};
-  })());
+  // Internet / utilities /5 — RENTALS ONLY. Owners arrange their own service,
+  // so for-sale rows skip this component entirely (the known-points
+  // renormalization absorbs it; no fake "confirm internet" flags on houses).
+  if(market !== "sale"){
+    push("internet", "Internet / utilities", 5, (function(){
+      const t = asText(r["Internet / utilities"]).toLowerCase();
+      if(truthy(r.InternetConfirmed) || r.HasInternet || /all|incl/.test(t)) return {pts:5, note:"included"};
+      if(/partial|some|hydro/.test(t)) return {pts:3, level:"warn", note:"partial"};
+      if(/no internet|not included|extra/.test(t)) return {pts:2, level:"warn", note:"internet extra"};
+      return {na:true, note:"Internet / utilities not confirmed"};
+    })());
+  }
 
-  // Privacy + housing type /15
-  push("privacy", "Privacy / housing type", 15, (function(){
+  // Privacy + housing type /15 — market-aware:
+  // rent: private unit > private room > shared; sale: property fit
+  // (detached > semi/town > condo, which carries fees and less land).
+  push("privacy", market === "sale" ? "Property type / fit" : "Privacy / housing type", 15, (function(){
     const t = compact([r.Type, r["Criteria fit"]]).toLowerCase();
-    if(!t) return {na:true, note:"Housing type not stated"};
-    if(/basement|studio|bachelor|1-?bed|one bed|apartment|ensuite|en-suite|own bath|private bath|separate entrance/.test(t)) return {pts:15, note:"private unit / own bath"};
+    if(!t) return {na:true, note:"Home type not stated"};
+    if(market === "sale"){
+      if(/detached|house(?!hold)|bungalow|two-?stor/.test(t) && !/semi|town|condo/.test(t)) return {pts:15, note:"detached house"};
+      if(/semi|town(house|home)|duplex|link/.test(t)) return {pts:13, note:"semi / townhouse"};
+      if(/condo|apartment|loft|strata/.test(t)) return {pts:11, note:"condo / apartment (check fees)"};
+      return {pts:9, note:"type unclear"};
+    }
+    if(/basement|studio|bachelor|1-?bed|one bed|apartment|house(?!hold)|ensuite|en-suite|own bath|private bath|separate entrance/.test(t)) return {pts:15, note:"private unit / own bath"};
     if(/shared bedroom|shared room/.test(t)) return {pts:5, level:"bad", note:"Shared bedroom"};
     if(/private (room|bed)/.test(t)) return {pts:12, note:"private room"};
     if(/room/.test(t)) return {pts:11, note:"room in shared house"};
     return {pts:8, note:"type unclear"};
   })());
 
-  // Lease timing + student fit /10 — graduated on what's actually stated; N/A if silent
-  push("lease", "Lease timing / fit", 10, (function(){
-    if(truthy(r.JulyConfirmed)) return {pts:10, note:"July confirmed"};
+  // Timing /10 — market-aware, graduated on what's actually stated.
+  // rent: move-in timing; sale: possession/closing (tenanted = real gotcha).
+  push("lease", market === "sale" ? "Possession / closing" : "Move-in timing", 10, (function(){
+    if(truthy(r.JulyConfirmed)) return {pts:10, note:"timing confirmed"};
     const t = compact([r.Availability, r["What to verify"]]).toLowerCase();
-    if(/12[\s-]*month|year lease|12\s*mo|july[^.]{0,20}july/.test(t)) return {pts:10, note:"12-month / July-to-July"};
-    if(/late july|july/.test(t)) return {pts:9, note:"July start stated"};
-    if(/flexible|negotiable|any time|anytime/.test(t)) return {pts:7, note:"flexible start"};
-    if(/now|immediate|available now|asap|current|move-?in/.test(t)) return {pts:7, note:"available now"};
-    if(/aug/.test(t)) return {pts:6, note:"August start"};
-    if(/sept/.test(t)) return {pts:4, level:"bad", note:"September start"};
-    return {na:true, note:"Lease timing not stated — confirm"};
+    if(market === "sale"){
+      if(/vacant|immediate|quick clos|flexible/.test(t)) return {pts:10, note:"vacant / flexible possession"};
+      if(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b|\d{2,4}[-/]\d{1,2}/.test(t)) return {pts:9, note:"possession date stated"};
+      if(/tenant|leased|rented until/.test(t)) return {pts:5, level:"bad", note:"Tenanted — possession delayed"};
+      return {na:true, note:"Possession not stated — confirm"};
+    }
+    if(/12[\s-]*month|year lease|12\s*mo/.test(t)) return {pts:10, note:"12-month lease"};
+    if(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b/.test(t)) return {pts:9, note:"move-in month stated"};
+    if(/flexible|negotiable|any ?time/.test(t)) return {pts:8, note:"flexible start"};
+    if(/now|immediate|available now|asap|vacant/.test(t)) return {pts:8, note:"available now"};
+    return {na:true, note:"Timing not stated — confirm"};
   })());
 
   // Trust / clarity / quality /10 — always assessable
@@ -363,10 +434,14 @@ function computeScore(r){
 
   const known = comps.filter(c => !c.na);
   const knownMax = known.reduce((a, c) => a + c.max, 0);
+  const totalMax = comps.reduce((a, c) => a + c.max, 0); // 100 rent · 95 sale (no internet comp)
   const earned = known.reduce((a, c) => a + c.earned, 0);
   const raw = knownMax ? Math.max(0, Math.min(100, Math.round(earned / knownMax * 100))) : 0;
-  // Cap one band per missing must-have so an unknown big-3 field can't inflate.
-  const criticalUnknown = comps.filter(c => c.na && CRITICAL_KEYS.includes(c.key)).map(c => c.key);
+  // Cap one band per missing must-have so an unknown essential can't inflate.
+  // Rent must-haves: location, cost, parking. Sale: location, cost (parking is
+  // usually visible on house listings and would false-cap every condo).
+  const critKeys = market === "sale" ? ["location", "cost"] : CRITICAL_KEYS;
+  const criticalUnknown = comps.filter(c => c.na && critKeys.includes(c.key)).map(c => c.key);
   const cap = criticalUnknown.length >= 3 ? 59 : CRITICAL_CAP[criticalUnknown.length];
   const total = Math.min(raw, cap);
   return {
@@ -374,8 +449,7 @@ function computeScore(r){
     components: comps,
     unconfirmed: comps.filter(c => c.na).map(c => c.key),
     negatives: comps.filter(c => c.level === "bad").map(c => c.key),
-    knownMax,
-    tier: areaTier(r)
+    knownMax, totalMax
   };
 }
 
@@ -388,8 +462,9 @@ function scoreLevelClass(r){
 function scoreBreakdown(r){
   const comps = r.ScoreComponents || [];
   const body = comps.map(c => c.na ? `${c.label} N/A` : `${c.label} ${c.earned}/${c.max}`).join(" · ");
+  const tmax = Number.isFinite(r.ScoreTotalMax) ? r.ScoreTotalMax : 100;
   let s = `Auto-score ${r.ScoreNum}/100 — ${body}`;
-  if(Number.isFinite(r.ScoreKnownMax) && r.ScoreKnownMax < 100) s += ` · scored on ${r.ScoreKnownMax}/100 known pts`;
+  if(Number.isFinite(r.ScoreKnownMax) && r.ScoreKnownMax < tmax) s += ` · scored on ${r.ScoreKnownMax}/${tmax} known pts`;
   if(r.ScoreComputed && (r.ScoreCritUnknown || []).length){
     const names = r.ScoreCritUnknown.map(k => SCORE_SHORT[k] || k).join(", ");
     s += ` · ⚠ capped at ${r.ScoreCap} — must-have unconfirmed: ${names}`;
@@ -420,7 +495,8 @@ function scoreTipHTML(r){
     return `<div class="strow"><span class="stlabel">${safe(c.label)}</span><span class="stbar"><i class="${barCls}" style="width:${pct}%"></i></span><span class="stval">${val}</span></div>`;
   }).join("");
   const notes = [];
-  if(Number.isFinite(r.ScoreKnownMax) && r.ScoreKnownMax < 100) notes.push(`scored on ${r.ScoreKnownMax}/100 known points`);
+  const tmax = Number.isFinite(r.ScoreTotalMax) ? r.ScoreTotalMax : 100;
+  if(Number.isFinite(r.ScoreKnownMax) && r.ScoreKnownMax < tmax) notes.push(`scored on ${r.ScoreKnownMax}/${tmax} known points`);
   if(r.ScoreComputed && (r.ScoreCritUnknown || []).length) notes.push(`⚠ capped at ${r.ScoreCap} — must-have unconfirmed: ${r.ScoreCritUnknown.map(k => SCORE_SHORT[k] || k).join(", ")}`);
   if(r.ScoreComputed && Number.isFinite(r.ScoreSheet)) notes.push(`sheet had ${r.ScoreSheet}`);
   if(!r.ScoreComputed) notes.push(`manual ScoreOverride in use`);
@@ -477,8 +553,28 @@ function deriveListing(o){
   o.RentNum     = parseNum(o["Approx monthly share"]);
   o.LatNum      = parseNum(o["Latitude"]);
   o.LonNum      = parseNum(o["Longitude"]);
-  o.UnderTarget = Number.isFinite(rent)  && rent  <= 1000;
-  o.EasyCommute = Number.isFinite(drive) && drive <= 15;
+  // Market: "rent" (default) or "sale" — set a Market column in the sheet, or
+  // it's inferred from "for sale"/MLS wording in Type / Rent text.
+  o.MarketType = /sale/i.test(asText(o.Market)) || /for sale|mls®?\s|listed for|asking price/i.test(compact([o.Type, o["Rent text"]])) ? "sale" : "rent";
+  // Distances to the user's configured places (straight-line km, priority-weighted)
+  const ps = getPois();
+  const hasLL = Number.isFinite(parseNum(o["Latitude"])) && Number.isFinite(parseNum(o["Longitude"]));
+  o.KmToPois = ps.map(p => hasLL ? haversineKm(o.LatNum, o.LonNum, Number(p.lat), Number(p.lon)) : NaN);
+  const finitePairs = o.KmToPois.map((d, i) => [d, i]).filter(x => Number.isFinite(x[0]));
+  if(finitePairs.length){
+    const best = finitePairs.reduce((a, b) => b[0] < a[0] ? b : a);
+    o.KmNearest = best[0];
+    o.NearestPoiName = poiName(ps[best[1]], best[1]);
+    const ws = finitePairs.length === 1 ? [1] : finitePairs.length === 2 ? [.65, .35] : [.55, .3, .15];
+    let tot = 0, wsum = 0;
+    finitePairs.forEach(([d], k) => { const w = ws[k] != null ? ws[k] : ws[ws.length - 1]; tot += d * w; wsum += w; });
+    o.KmWeighted = tot / wsum;
+    o.PoiKmText = finitePairs.map(([d, i]) => `${poiName(ps[i], i)} ${d.toFixed(1)}`).join(" · ") + " km";
+  } else {
+    o.KmNearest = NaN; o.KmWeighted = NaN; o.NearestPoiName = ""; o.PoiKmText = "";
+  }
+  o.UnderTarget = Number.isFinite(rent) && rent <= budgetFor(o.MarketType);
+  o.EasyCommute = (Number.isFinite(drive) && drive <= 15) || (Number.isFinite(o.KmWeighted) && o.KmWeighted <= 7);
   o.HasParking  = /yes|incl|avail|spot|driveway|assigned|surface|garage|outdoor/i.test(park) && !/no parking/i.test(park);
   o.HasInternet = /yes|incl|all|wifi|gigabit|1gb/i.test(net);
   o.ListingKind = listingKind(o);
@@ -498,9 +594,10 @@ function deriveListing(o){
   o.ViewingBookedBool = truthy(o.ViewingBooked) || !!asText(o.ViewingDate) || /viewing|tour|showing|booked/i.test(status);
   o.GoodOption = /good|strong|shortlist|keeper|yes|priority|message first|book viewing/i.test(decision) && !/no|bad|dead|remove|scam/i.test(decision);
   o.NeedsParking  = !truthy(o.ParkingConfirmed)  && (!o.HasParking  || /park/.test(toVerify));
-  o.NeedsInternet = !truthy(o.InternetConfirmed) && (!o.HasInternet || /internet|wifi|util|hydro/.test(toVerify));
-  o.NeedsAddress  = !truthy(o.AddressConfirmed)  && (!addrText || /area only|approx|unknown|postal|n6[a-z]?\s*\d/.test(addrText) || /address|intersection|exact location/.test(toVerify));
-  o.NeedsJuly     = !truthy(o.JulyConfirmed)     && !/july/.test(availText) && (availText === "" || /sept|unknown|verify|current|now|tbd|ask/.test(availText) || /july|lease start|move-?in|term/.test(toVerify));
+  o.NeedsInternet = o.MarketType !== "sale" && !truthy(o.InternetConfirmed) && (!o.HasInternet || /internet|wifi|util|hydro/.test(toVerify));
+  o.NeedsAddress  = !truthy(o.AddressConfirmed)  && (!addrText || /area only|approx|unknown/.test(addrText) || /address|intersection|exact location/.test(toVerify));
+  // timing (move-in / possession) — kept on the JulyConfirmed sheet column for back-compat
+  o.NeedsJuly     = !truthy(o.JulyConfirmed)     && (availText === "" || /unknown|verify|tbd|ask|\?/.test(availText) || /lease start|move-?in|timing|possession|closing|term/.test(toVerify));
   // Live computed score (manual ScoreOverride wins; sheet Score kept for compare)
   const auto = computeScore(o);
   const override = parseNum(o.ScoreOverride);
@@ -513,6 +610,7 @@ function deriveListing(o){
   o.ScoreUnconfirmed = auto.unconfirmed;
   o.ScoreNegatives   = auto.negatives;
   o.ScoreKnownMax    = auto.knownMax;
+  o.ScoreTotalMax    = auto.totalMax;
   o.ScoreComputed    = !Number.isFinite(override);
   o.ScoreNum         = Number.isFinite(override) ? override : auto.total;
   return o;
@@ -548,8 +646,6 @@ async function loadSheetWithTabs(kind){
 
 // A row counts as archived if the Sheet says so OR it was archived this session.
 function isArchived(r){ return r.Archived === true || archived.has(r.ID); }
-
-const OIART = {lat:42.936, lon:-81.205};
 
 const el = id => document.getElementById(id);
 function safe(s){return String(s ?? "").replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
@@ -606,8 +702,8 @@ function renderKPIs(){
   const nw=rows.filter(r=>r.IsNew).length;
   const under=rows.filter(r=>r.UnderTarget).length;
   const easy=rows.filter(r=>r.EasyCommute).length;
-  const kpis=[["green",rows.length,"Total leads"],["green",v1,"Vol 1 core fits"],["blue",v2,"Vol 2 stretch"],
-    ["gold",nw,"New this round"],["green",under,"≤ $1,000 all-in"],["green",easy,"≤ 15-min drive"]];
+  const kpis=[["green",rows.length,"Total listings"],["green",v1,"Vol 1 core fits"],["blue",v2,"Vol 2 stretch"],
+    ["gold",nw,"New this round"],["green",under,"Within budget"],["green",easy,"Easy commute"]];
   el("kpis").innerHTML=kpis.map(k=>`<div class="kpi ${k[0]}"><div class="num">${k[1]}</div><div class="label">${k[2]}</div></div>`).join("");
 }
 
@@ -616,7 +712,7 @@ function updateCounts(){
   const total=rows.length;
   const active=rows.filter(r=>!isArchived(r)).length;
   const tag=el("leadCountTag");
-  if(tag) tag.textContent=`London, ON · ${active} active lead${active===1?"":"s"} · scored & mapped`;
+  if(tag) tag.textContent=`${active} active listing${active===1?"":"s"} · scored & mapped`;
   const fc=el("footerCount");
   if(fc) fc.textContent=String(total);
 }
@@ -633,7 +729,7 @@ function populateFilters(){
 const hasMap = (typeof L !== "undefined");
 let map=null;
 if(hasMap){
-  map=L.map("map",{scrollWheelZoom:true}).setView([42.945,-81.23],12);
+  map=L.map("map",{scrollWheelZoom:true}).setView([45,-85],4); // neutral start; fits to data + places on load
   L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",{subdomains:"abcd",maxZoom:20,attribution:'&copy; OpenStreetMap &copy; CARTO'}).addTo(map);
 } else {
   const md=document.getElementById("map");
@@ -641,14 +737,33 @@ if(hasMap){
 }
 
 function iconFor(r){
-  const cls = r==="oiart" ? "oiart" : volClass(r)+(r.IsNew?" isnew":"");
-  const label = r==="oiart" ? "★" : safe(rankLabel(r));
+  const cls = r==="poi" ? "poi" : volClass(r)+(r.IsNew?" isnew":"");
+  const label = r==="poi" ? "★" : safe(rankLabel(r));
   return L.divIcon({className:"",html:`<div class="marker-label ${cls}">${label}</div>`,iconSize:[30,30],iconAnchor:[15,15],popupAnchor:[0,-14]});
 }
+/* Markers + rings for the user's configured places. POI 1 is primary: it gets
+   the 5 km / 10 km rings; every POI gets a star marker. Re-run on config save. */
+let poiLayers=[];
+function renderPois(){
+  if(!hasMap) return;
+  poiLayers.forEach(l=>map.removeLayer(l)); poiLayers=[];
+  const ps=getPois();
+  ps.forEach((p,i)=>{
+    const m=L.marker([Number(p.lat),Number(p.lon)],{icon:iconFor("poi"),zIndexOffset:1000})
+      .bindPopup(`<h3>${safe(poiName(p,i))}</h3><b>Your place ${i+1}${i===0?" · primary":""}</b><br>Distances and routes measure to here.${i===0?" 5 km and 10 km rings shown.":""}`)
+      .addTo(map);
+    poiLayers.push(m);
+  });
+  if(ps.length){
+    const p0=ps[0];
+    poiLayers.push(
+      L.circle([Number(p0.lat),Number(p0.lon)],{radius:5000,color:"#2f6f57",weight:2,fillOpacity:.03}).addTo(map),
+      L.circle([Number(p0.lat),Number(p0.lon)],{radius:10000,color:"#315f87",weight:2,fillOpacity:.02}).addTo(map)
+    );
+  }
+}
 if(hasMap){
-  L.marker([OIART.lat,OIART.lon],{icon:iconFor("oiart"),zIndexOffset:1000}).bindPopup("<h3>OIART</h3><b>502 Newbold St, London ON</b><br>5 km and 10 km rings shown.").addTo(map);
-  L.circle([OIART.lat,OIART.lon],{radius:5000,color:"#2f6f57",weight:2,fillOpacity:.03}).addTo(map);
-  L.circle([OIART.lat,OIART.lon],{radius:10000,color:"#315f87",weight:2,fillOpacity:.02}).addTo(map);
+  renderPois();
   map.on("moveend zoomend",()=>{ if(currentFilteredList.length) renderLeadPanel(); });
 }
 
@@ -661,11 +776,11 @@ function popup(r){
   <span class="pill ${pillClass(r)}">${volLabel(r)}</span><span class="pill scorepill ${scoreLevelClass(r)}" title="${safe(scoreBreakdown(r))}">Score ${safe(r.ScoreNum)}</span><span class="pill kindpill ${kindClass(r)}">${safe(r.ListingKind)}</span>${r.IsNew?'<span class="pill newpill">★ new</span>':''}<br>
   <b>Area:</b> ${safe(textOr(r.Neighbourhood))}<br><b>Locator:</b> ${safe(textOr(r["Address / locator"]))}<br>
   <b>Type:</b> ${safe(textOr(r.Type))}<br><b>Rent:</b> ${safe(textOr(r["Rent text"]))}<br>
-  <b>Drive:</b> ${safe(textOr(r["Est drive min"]))}${asText(r["Est drive min"])?" min":""} · <b>Parking:</b> ${safe(textOr(r.Parking))}<br>
+  <b>Drive:</b> ${safe(textOr(r["Est drive min"]))}${asText(r["Est drive min"])?" min":""}${r.PoiKmText?` · <b>Distance:</b> ${safe(r.PoiKmText)}`:""} · <b>Parking:</b> ${safe(textOr(r.Parking))}<br>
   <b>Internet/util:</b> ${safe(textOr(r["Internet / utilities"]))}<br>
   <p style="margin:6px 0"><b>Why:</b> ${safe(textOr(r["Why add / note"]))}</p>
   <p style="margin:6px 0"><b>Verify:</b> ${safe(textOr(r["What to verify"]))}</p>
-  <div class="links">${linkButton(r.URL, "Listing / search")} ${linkButton(routeLink(r), "Route to OIART", "route", "No route info")}</div>`;
+  <div class="links">${linkButton(r.URL, "Listing / search")} ${routeLinksHtml(r)}</div>`;
 }
 function card(r){
   const arch=isArchived(r);
@@ -684,9 +799,10 @@ function card(r){
     ["Viewing", r.ViewingDate || (r.ViewingBookedBool ? "booked" : "")]
   ].filter(x => asText(x[1]));
   const rent = textOr(r["Rent text"]);
-  const drive = asText(r["Est drive min"]) ? `~${safe(r["Est drive min"])} min` : "drive not entered";
+  const near = Number.isFinite(r.KmNearest) ? `${r.KmNearest.toFixed(1)} km → ${safe(r.NearestPoiName)}` : "";
+  const drive = asText(r["Est drive min"]) ? `~${safe(r["Est drive min"])} min${near ? ` · ${near}` : ""}` : (near || "distance unknown");
   return `<div class="card${selected}" data-id="${safe(r.ID)}">
-  <div class="cardhead"><div class="pills"><span class="pill ${pillClass(r)}">${volLabel(r)}</span><span class="pill scorepill ${scoreLevelClass(r)}" title="${safe(rankTitle(r))}">#${safe(rankLabel(r))} · ${safe(r.ScoreNum)}${r.ScoreComputed && Number.isFinite(r.ScoreSheet) && r.ScoreSheet!==r.ScoreNum?` <span class="sheetcmp">(was ${safe(r.ScoreSheet)})</span>`:""}</span><span class="pill kindpill ${kindClass(r)}">${safe(r.ListingKind)}</span>${r.IsNew?'<span class="pill newpill">★ new</span>':''}${asText(r.DuplicateOf)?`<span class="pill warnpill" title="Marked as duplicate of ${safe(r.DuplicateOf)}">dup of ${safe(r.DuplicateOf)}</span>`:''}${r.NeedsId?'<span class="pill warnpill">Needs ID</span>':''}</div>${action}</div>
+  <div class="cardhead"><div class="pills">${r.MarketType==="sale"?'<span class="pill salepill">For sale</span>':''}<span class="pill ${pillClass(r)}">${volLabel(r)}</span><span class="pill scorepill ${scoreLevelClass(r)}" title="${safe(rankTitle(r))}">#${safe(rankLabel(r))} · ${safe(r.ScoreNum)}${r.ScoreComputed && Number.isFinite(r.ScoreSheet) && r.ScoreSheet!==r.ScoreNum?` <span class="sheetcmp">(was ${safe(r.ScoreSheet)})</span>`:""}</span><span class="pill kindpill ${kindClass(r)}">${safe(r.ListingKind)}</span>${r.IsNew?'<span class="pill newpill">★ new</span>':''}${asText(r.DuplicateOf)?`<span class="pill warnpill" title="Marked as duplicate of ${safe(r.DuplicateOf)}">dup of ${safe(r.DuplicateOf)}</span>`:''}${r.NeedsId?'<span class="pill warnpill">Needs ID</span>':''}</div>${action}</div>
   <h3>${safe(textOr(r["Listing / lead"], "Untitled listing"))}</h3>
   ${imageThumb(r)}
   <div class="meta">${safe(textOr(r.Neighbourhood))} · ${safe(textOr(r["Address / locator"]))}</div>
@@ -696,7 +812,7 @@ function card(r){
   ${workflow.length ? `<div class="workmeta">${workflow.map(([k,v]) => `<span><b>${safe(k)}:</b> ${safe(v)}</span>`).join("")}</div>` : ""}
   ${workflowEditor(r)}
   <div class="meta" style="margin-top:4px;font-size:11.5px">${seen}${chk}</div>
-  <div class="links">${linkButton(r.URL, "Listing")} ${linkButton(routeLink(r), "Route", "route", "No route info")}<button class="linkbtn copy" data-copy="${safe(r.ID)}" type="button">Copy landlord message</button></div>
+  <div class="links">${linkButton(r.URL, "Listing")} ${linkButton(routeLink(r), "Route", "route", "No route info")}<button class="linkbtn copy" data-copy="${safe(r.ID)}" type="button">Copy inquiry message</button></div>
   </div>`;
 }
 
@@ -743,34 +859,47 @@ function workflowEditor(r){
       <label>Duplicate of (ID) <input data-field="DuplicateOf" type="text" placeholder="e.g. A4" value="${safe(r.DuplicateOf)}"></label>
       </div>
       <div class="workflowchecks">
-      ${["Contacted","ViewingBooked","ParkingConfirmed","InternetConfirmed","AddressConfirmed","JulyConfirmed"].map(f=>`<label><input data-field="${f}" type="checkbox"${checked(r[f])}> ${safe(f.replace(/([A-Z])/g," $1").trim())}</label>`).join("")}
+      ${["Contacted","ViewingBooked","ParkingConfirmed","InternetConfirmed","AddressConfirmed","JulyConfirmed"].map(f=>`<label><input data-field="${f}" type="checkbox"${checked(r[f])}> ${safe(f==="JulyConfirmed"?"Timing confirmed":f.replace(/([A-Z])/g," $1").trim())}</label>`).join("")}
       </div>
     </details>
   </details>`;
 }
 
-// Builds a warm, specific outreach message tailored to each listing: it
-// references the real address/area, adapts to a room vs. a whole unit, and
+// Builds a warm, specific inquiry tailored to each listing: references the
+// real address/area, adapts rent vs. for-sale and room vs. whole unit, and
 // only asks about the things that are actually still unconfirmed for that row.
 function landlordMessage(r){
   const addr = asText(r["Address / locator"]);
   const nb = asText(r.Neighbourhood);
-  const goodAddr = addr && !/\barea\b|approx|unknown|\bmall\b|^n6[a-z]?\s*\d?$/i.test(addr);
+  const goodAddr = addr && !/\barea\b|approx|unknown|\bmall\b/i.test(addr);
+  const sale = r.MarketType === "sale";
+
+  if(sale){
+    const ref = goodAddr ? `the property at ${addr}` : nb ? `your listing in ${nb}` : "your listing";
+    const qs = ["is it still available, and are there any offers registered or a set offer date?"];
+    if(r.NeedsAddress || !goodAddr) qs.push("the exact address?");
+    const t = asText(r.Availability).toLowerCase();
+    if(!t || /tenant|leased/.test(t)) qs.push("what the possession / closing timeline looks like (and whether it's currently tenanted)?");
+    qs.push("whether there are any condo/maintenance fees or known issues I should factor in?");
+    return `Hi! I'm interested in ${ref}. Could you let me know:\n` + qs.map(q => "• " + q).join("\n") +
+      `\n\nI'd love to book a showing at your earliest convenience — thank you!`;
+  }
+
   const hay = compact([r.Type, r["Listing / lead"], r["Criteria fit"]]).toLowerCase();
-  const isUnit = /apartment|studio|bachelor|1-?bed|one bed|condo|townhouse|duplex|\bunit\b/.test(hay) && !/room in|private room/.test(hay);
+  const isUnit = /apartment|studio|bachelor|1-?bed|one bed|condo|townhouse|duplex|house(?!hold)|\bunit\b/.test(hay) && !/room in|private room/.test(hay);
   const noun = isUnit ? "place" : "room";
   const ref = goodAddr ? `your listing at ${addr}` : nb ? `your ${nb} ${noun}` : "your rental listing";
+  const avail = asText(r.Availability);
+  const timingKnown = truthy(r.JulyConfirmed) || !!avail;
+  const timing = timingKnown && avail ? `around ${avail}` : "in the coming weeks (I'm flexible on the exact date)";
 
-  const julyKnown = truthy(r.JulyConfirmed) || /july/.test(asText(r.Availability).toLowerCase());
-  const timing = julyKnown ? "in July" : "around late July (I can be a little flexible on the exact date)";
-
-  const intro = `Hi! I'm interested in ${ref}. I'm a domestic student starting at OIART (the audio-recording school at 502 Newbold St) and I'm looking for ${isUnit ? "a place" : "a private room"} on roughly a 12-month lease, ideally moving in ${timing}. I'm quiet, tidy, non-smoking, and happy to provide references.`;
+  const intro = `Hi! I'm interested in ${ref}. I'm looking for ${isUnit ? "a place" : "a private room"} on roughly a 12-month lease, ideally moving in ${timing}. I'm quiet, tidy, non-smoking, and happy to provide references.`;
 
   const qs = [];
-  qs.push(julyKnown ? "is it still available?" : "is it still available, and would a July-to-July (or late-July) start work?");
+  qs.push(timingKnown ? "is it still available?" : "is it still available, and what move-in dates work?");
   qs.push("the total monthly cost, including any utilities or fees?");
   if(r.NeedsInternet || !r.HasInternet) qs.push("whether internet is included (and roughly the speed)?");
-  if(r.NeedsParking || !r.HasParking) qs.push("whether one outdoor parking spot is available?");
+  if(r.NeedsParking || !r.HasParking) qs.push("whether a parking spot is available?");
   if(r.NeedsAddress || !goodAddr) qs.push("the exact address or nearest major intersection?");
   if(!asText(r.Furnishing)) qs.push(`whether the ${noun} is furnished or unfurnished?`);
   if(!isUnit) qs.push("who else lives there, and how many people share the kitchen and bathroom?");
@@ -787,7 +916,7 @@ async function copyLandlordMessage(id){
   try{
     if(!navigator.clipboard) throw new Error("Clipboard unavailable");
     await navigator.clipboard.writeText(msg);
-    toast(`Copied landlord message for ${id}.`);
+    toast(`Copied inquiry message for ${id}.`);
   }catch(e){
     const ta = document.createElement("textarea");
     ta.value = msg;
@@ -798,7 +927,7 @@ async function copyLandlordMessage(id){
     let copied = false;
     try{ copied = document.execCommand("copy"); }catch(err){}
     ta.remove();
-    if(copied) toast(`Copied landlord message for ${id}.`);
+    if(copied) toast(`Copied inquiry message for ${id}.`);
     else showCopyFallback(id, msg);
   }
 }
@@ -880,6 +1009,7 @@ async function saveWorkflow(id, fields){
 function filtered(){
   const q=el("search").value.trim().toLowerCase();
   const vol=el("volume").value, neigh=el("neighbourhood").value, src=el("source").value;
+  const mk=el("market")?el("market").value:"";
   const drive=el("drive").value?Number(el("drive").value):null;
   let list=rows.filter(r=>{
     const isArch=isArchived(r);
@@ -887,6 +1017,7 @@ function filtered(){
     if(state.view==="archived" && !isArch) return false;
     if(q && !searchText(r).includes(q)) return false;
     if(vol && !String(r.Volume).includes(vol)) return false;
+    if(mk && r.MarketType!==mk) return false;
     if(neigh && r.Neighbourhood!==neigh) return false;
     if(src && r.Source!==src) return false;
     if(drive!==null && num(r.DriveNum,999)>drive) return false;
@@ -983,7 +1114,7 @@ function render(options={}){
       const m=L.marker([lat,lon],{icon:iconFor(r)}).bindPopup(popup(r)).addTo(map);
       markers.push(m); markerById[r.ID]=m; bounds.push([lat,lon]);
     });
-    if(options.fitMap && bounds.length){bounds.push([OIART.lat,OIART.lon]);map.fitBounds(bounds,{padding:[40,40],maxZoom:13});}
+    if(options.fitMap && bounds.length){getPois().forEach(p=>bounds.push([Number(p.lat),Number(p.lon)]));map.fitBounds(bounds,{padding:[40,40],maxZoom:13});}
   }
   renderLeadPanel();
   const ab=el("archivebar");
@@ -1006,7 +1137,8 @@ function render(options={}){
 }
 // sites grouped by category
 function renderSites(){
-  const order=["Aggregator","MLS","Roommate","Student","Student/Local","Local landlord","Social","Niche"];
+  const order=["For sale — MLS & brokers","For sale — aggregators","Rentals — aggregators","Rentals — rooms & roommates","Social & classifieds","Research & tools",
+    "Aggregator","MLS","Roommate","Student","Student/Local","Local landlord","Social","Niche"]; // old categories kept so existing Sheets still group sanely
   const groups={};
   sites.forEach(s=>{(groups[s.Category]=groups[s.Category]||[]).push(s);});
   const cats=Object.keys(groups).sort((a,b)=>{const ia=order.indexOf(a),ib=order.indexOf(b);return (ia<0?99:ia)-(ib<0?99:ib);});
@@ -1025,7 +1157,7 @@ function renderSites(){
   el("sites").innerHTML=html;
 }
 
-["search","volume","neighbourhood","source","drive"].forEach(id=>el(id).addEventListener("input",render));
+["search","volume","market","neighbourhood","source","drive"].forEach(id=>{const e=el(id);if(e)e.addEventListener("input",render);});
 function toggle(id,key){el(id).onclick=()=>{state[key]=!state[key];el(id).classList.toggle("active",state[key]);render();};}
 toggle("under1000","under1000");toggle("parking","parking");toggle("internet","internet");toggle("newonly","newonly");
 document.querySelectorAll("[data-filter]").forEach(btn => {
@@ -1077,12 +1209,12 @@ function downloadCsv(csv, name){
 }
 
 function exportFilteredCsv(){
-  downloadCsv(csvForRows(filtered()), `oiart_filtered_${new Date().toISOString().slice(0,10)}.csv`);
+  downloadCsv(csvForRows(filtered()), `homefinder_filtered_${new Date().toISOString().slice(0,10)}.csv`);
   toast("Exported the currently filtered rows.");
 }
 
 function exportMasterCsv(){
-  downloadCsv(csvForRows(rows), `oiart_master_${new Date().toISOString().slice(0,10)}.csv`);
+  downloadCsv(csvForRows(rows), `homefinder_master_${new Date().toISOString().slice(0,10)}.csv`);
   toast(`Exported all ${rows.length} listings (master CSV). Sheet 'Score' is preserved; 'ScoreAuto' holds the computed value.`);
 }
 
@@ -1090,6 +1222,92 @@ const exportBtn=el("exportCsv");
 if(exportBtn) exportBtn.onclick=exportFilteredCsv;
 const masterBtn=el("downloadMaster");
 if(masterBtn) masterBtn.onclick=exportMasterCsv;
+
+/* ===================== My places (POIs) + route selector ================== */
+function reDeriveAll(){ rows.forEach(deriveListing); }
+
+// Global "Route to" selector — all card/table Route buttons follow this.
+function renderRouteSelect(){
+  const wrap=el("routewrap"), sel=el("routePoi");
+  if(!wrap||!sel) return;
+  const ps=getPois();
+  if(ps.length<1){ wrap.hidden=true; return; }
+  wrap.hidden=false;
+  sel.innerHTML=ps.map((p,i)=>`<option value="${i}"${i===num(config.routePoi,0)?" selected":""}>${safe(poiName(p,i))}</option>`).join("");
+}
+const routeSel=el("routePoi");
+if(routeSel) routeSel.addEventListener("change",e=>{
+  config.routePoi=num(e.target.value,0); saveConfig(); render();
+});
+
+function fillPoiPanel(){
+  for(let i=0;i<MAX_POIS;i++){
+    const row=document.querySelector(`.poirow[data-poi="${i}"]`);
+    if(!row) continue;
+    const p=(config.pois||[])[i]||{};
+    row.querySelector('[data-f="name"]').value = asText(p.name);
+    row.querySelector('[data-f="lat"]').value  = p.lat!=null&&p.lat!=="" ? p.lat : "";
+    row.querySelector('[data-f="lon"]').value  = p.lon!=null&&p.lon!=="" ? p.lon : "";
+  }
+  const br=el("budgetRent"), bs=el("budgetSale");
+  if(br) br.value=num(config.budgetRent,1000);
+  if(bs) bs.value=num(config.budgetSale,500000);
+}
+
+function savePoiPanel(){
+  const pois=[];
+  for(let i=0;i<MAX_POIS;i++){
+    const row=document.querySelector(`.poirow[data-poi="${i}"]`);
+    if(!row) continue;
+    const name=row.querySelector('[data-f="name"]').value.trim();
+    const lat=parseFloat(row.querySelector('[data-f="lat"]').value);
+    const lon=parseFloat(row.querySelector('[data-f="lon"]').value);
+    if(Number.isFinite(lat)&&Number.isFinite(lon)) pois.push({name:name||`Place ${pois.length+1}`,lat,lon});
+    else if(name) toast(`"${name}" needs coordinates — use Set on map, or right-click in Google Maps and copy them.`);
+  }
+  config.pois=pois.slice(0,MAX_POIS);
+  config.routePoi=Math.min(num(config.routePoi,0),Math.max(pois.length-1,0));
+  const br=el("budgetRent"), bs=el("budgetSale");
+  if(br&&parseFloat(br.value)>0) config.budgetRent=parseFloat(br.value);
+  if(bs&&parseFloat(bs.value)>0) config.budgetSale=parseFloat(bs.value);
+  saveConfig();
+  renderPois(); reDeriveAll(); renderKPIs(); renderRouteSelect(); render({fitMap:true});
+  toast(pois.length?`Saved ${pois.length} place${pois.length===1?"":"s"} — distances, scores and routes updated.`:"Saved. Add at least one place to unlock distances and routes.");
+}
+
+let pendingPoiSet=-1; // index of the place awaiting a map click
+const poiPanel=el("poiPanel");
+const poiBtn=el("poiBtn");
+if(poiBtn&&poiPanel){
+  poiBtn.addEventListener("click",()=>{
+    const opening=poiPanel.hidden;
+    poiPanel.hidden=!opening?true:false;
+    if(opening) fillPoiPanel();
+  });
+}
+const poiClose=el("poiClose");
+if(poiClose) poiClose.addEventListener("click",()=>{poiPanel.hidden=true;pendingPoiSet=-1;});
+const poiSave=el("poiSave");
+if(poiSave) poiSave.addEventListener("click",()=>{savePoiPanel();});
+document.querySelectorAll("[data-setpoi]").forEach(b=>b.addEventListener("click",()=>{
+  if(!hasMap){ toast("Map unavailable — paste coordinates manually (right-click in Google Maps → copy)."); return; }
+  pendingPoiSet=num(b.dataset.setpoi,0);
+  document.getElementById("map").scrollIntoView({behavior:"smooth",block:"center"});
+  toast(`Click the map to drop Place ${pendingPoiSet+1} there.`);
+}));
+if(hasMap){
+  map.on("click",e=>{
+    if(pendingPoiSet<0) return;
+    const row=document.querySelector(`.poirow[data-poi="${pendingPoiSet}"]`);
+    if(row){
+      row.querySelector('[data-f="lat"]').value=e.latlng.lat.toFixed(5);
+      row.querySelector('[data-f="lon"]').value=e.latlng.lng.toFixed(5);
+      toast(`Coordinates captured for Place ${pendingPoiSet+1} — name it and hit Save.`);
+    }
+    pendingPoiSet=-1;
+  });
+}
+renderRouteSelect();
 const printBtn=el("printView");
 if(printBtn) printBtn.onclick=()=>window.print();
 

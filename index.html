@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>OIART Rental Finder · London ON</title>
-<meta name="description" content="Every rental lead near OIART scored 0–100, mapped, and tracked — commute, cost, parking, privacy, lease timing and trust.">
+<title>Home Finder · score, map, decide</title>
+<meta name="description" content="Every listing scored 0–100 against the places you care about — commute, cost, parking, privacy, timing and trust. Rentals and homes for sale, mapped and tracked.">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -13,28 +13,29 @@
 </head>
 <body>
 <div class="appbar">
-  <span class="brand"><span class="brandmark" aria-hidden="true">⌂</span>OIART Rental Finder</span>
-  <span class="tag" id="leadCountTag">London, ON · scored &amp; mapped</span>
+  <span class="brand"><span class="brandmark" aria-hidden="true">⌂</span>Home Finder</span>
+  <span class="tag" id="leadCountTag">scored &amp; mapped</span>
   <nav class="topnav" aria-label="Sections">
     <a href="#board">Map</a>
     <a href="#alltable">Table</a>
     <a href="#sites-panel">Sites</a>
   </nav>
   <span class="spacer"></span>
+  <button class="placesbtn" id="poiBtn" type="button" title="Set up to three anchor places — distances, rings, scores and routes measure to them">📍 My places</button>
   <span class="sourcebadge" id="sourceBadge">Loading data...</span>
   <button class="dl" id="downloadMaster" type="button" title="Download every listing (all columns) as a CSV"><span>⬇ Export master CSV</span></button>
 </div>
 
 <header class="hero" data-reveal>
   <div class="hero-orbs" aria-hidden="true"><i class="orb o1"></i><i class="orb o2"></i><i class="orb o3"></i></div>
-  <span class="herokicker"><i class="livedot" aria-hidden="true"></i>Live tracker · London, Ontario</span>
-  <h1>Find the <em>right place</em> near OIART</h1>
-  <p class="lead">Every lead scored 0–100 on commute, cost, parking &amp; internet, privacy, lease timing and trust — then plotted against OIART (502 Newbold St) with 5&nbsp;km and 10&nbsp;km rings. Filter, sort, click a pin, then open the listing or route.</p>
+  <span class="herokicker"><i class="livedot" aria-hidden="true"></i>Live tracker · your search, your places</span>
+  <h1>Find the <em>right home</em> — anywhere</h1>
+  <p class="lead">Every listing — rental or for sale — scored 0–100 on commute, cost, parking &amp; internet, privacy, timing and trust, then plotted against <b>up to three places you choose</b> (work, school, family) with 5&nbsp;km and 10&nbsp;km rings. Set yours with <b>📍 My places</b>, filter, sort, click a pin, open the listing or route.</p>
   <details class="howit">
     <summary>How the board works</summary>
     <div class="howitbody">
-      <p><b>Vol 1</b> = core budget fits; <b>Vol 2</b> = stretch/lifestyle options. Highlighted leads were added this round. Scores fold in <b>neighbourhood character</b> (quiet/nature/walkability), so a peaceful Pond Mills street can edge out a busier White Oaks one a minute closer.</p>
-      <p>Hover any score for its full component breakdown. Orange <b>Confirm</b> chips mark details the listing never stated — the score is honest about what's still unknown, and a missing must-have (location, price, parking) caps it. Archive anything dead with the trash icon; it hides the lead from Active and syncs to the Sheet when write-back is configured. The spreadsheet is the source of truth — edit it, then hit Refresh.</p>
+      <p><b>Vol 1</b> = core budget fits; <b>Vol 2</b> = stretch/lifestyle options. Highlighted listings were added this round. The <b>location score</b> weights distance to all your places, with Place 1 counting most — so a home near everything beats one near only the gym.</p>
+      <p>Hover any score for its full component breakdown. Orange <b>Confirm</b> chips mark details the listing never stated — the score is honest about what's still unknown, and a missing must-have (location, price, parking for rentals) caps it. For-sale listings score on possession and property type instead of internet and roommates. Archive anything dead with the trash icon. The spreadsheet is the source of truth — edit it, then hit Refresh.</p>
     </div>
   </details>
 </header>
@@ -45,6 +46,7 @@
   <div class="toolbar" data-reveal style="--d:.12s">
     <div class="fields">
       <div class="searchfield"><label for="search">Search</label><input id="search" placeholder="street, area, 'parking', 'basement'…"></div>
+      <div><label for="market">Market</label><select id="market"><option value="">All</option><option value="rent">Rentals</option><option value="sale">For sale</option></select></div>
       <div><label for="volume">Volume</label><select id="volume"><option value="">All</option><option value="Vol 1">Vol 1 · core fits</option><option value="Vol 2">Vol 2 · stretch</option></select></div>
       <div><label for="neighbourhood">Neighbourhood</label><select id="neighbourhood"><option value="">All</option></select></div>
       <div><label for="source">Source</label><select id="source"><option value="">All</option></select></div>
@@ -54,7 +56,7 @@
       <div class="chipgroup">
         <span class="grouplabel">Quick filters</span>
         <div class="chips">
-          <button class="btn" id="under1000">≤ $1,000 all-in</button>
+          <button class="btn" id="under1000" title="Rentals within the rent budget; for-sale within the purchase budget (set both in 📍 My places)">Within budget</button>
           <button class="btn" id="parking">Parking</button>
           <button class="btn" id="internet">Internet incl.</button>
           <button class="btn new" id="newonly">★ New this round</button>
@@ -75,7 +77,7 @@
           <button class="btn" data-filter="needsParking">Parking verify</button>
           <button class="btn" data-filter="needsInternet">Internet verify</button>
           <button class="btn" data-filter="needsAddress">Address</button>
-          <button class="btn" data-filter="needsJuly">July start</button>
+          <button class="btn" data-filter="needsJuly">Timing</button>
         </div>
       </div>
       <div class="chipgroup actions">
@@ -102,6 +104,7 @@
           <button class="viewtab" id="tabArchived">Archived</button>
         </div>
         <button class="viewtab unmapped" id="showUnmapped" title="Also list filtered leads that have no map pin (no/approx coordinates)">+ Unmapped</button>
+        <span class="routewrap" id="routewrap" hidden><label for="routePoi">Route to</label><select id="routePoi"></select></span>
       </div>
       <div class="sub" id="sideSub">Best fit first. Click a card to focus its pin. The trash icon archives a lead; with write-back configured, that updates the Sheet too.</div>
       <div class="archivebar" id="archivebar"></div>
@@ -134,19 +137,50 @@
   <section id="sites-panel" class="panel" data-reveal>
     <div class="kicker">The playbook</div>
     <h2>Where to search — sites &amp; filters</h2>
-    <div class="sub">The team's core sites plus new ones added this round (highlighted). Same filter discipline applies everywhere.</div>
+    <div class="sub">Generic, widely-available listing sources for rentals and homes for sale. Apply the same filter discipline everywhere, and prefer direct listing pages over search pages.</div>
     <div class="sitegrid" id="sites"></div>
   </section>
 
   <aside class="note" data-reveal>
     <span class="noteicon" aria-hidden="true">ⓘ</span>
-    <div><b>Honest notes:</b> map pins are exact where an address was given, otherwise a neighbourhood centroid (so a few sit at the area's middle). Drive times are estimates — confirm in Google Maps at your real commute time. Several new room leads still need parking / internet / July start confirmed; each says what to check. A few Kijiji/Facebook entries point to a live search page because their detail pages block automated reads. The spreadsheet is the source of truth — edit it, then hit Refresh data.</div>
+    <div><b>Honest notes:</b> map pins are exact where an address was given, otherwise a neighbourhood centroid (so a few sit at the area's middle). Distances are straight-line and drive times are estimates — confirm in Google Maps at your real commute time. Orange chips mark details a listing never stated; each says what to check before you commit. Some classifieds entries point to a live search page because their detail pages block automated reads. The spreadsheet is the source of truth — edit it, then hit Refresh data.</div>
   </aside>
 </div>
 
+<div class="poipanel" id="poiPanel" hidden>
+  <div class="poihead"><b>📍 My places</b><button id="poiClose" class="trash" type="button" aria-label="Close">✕</button></div>
+  <p class="poisub">Up to three anchors — work, school, family. Listings get distances, map rings, route links and location scores measured against them (Place 1 counts most). Coordinates: hit <b>Set on map</b> then click the map, or right-click a spot in Google Maps and copy them.</p>
+  <div class="poirow" data-poi="0">
+    <span class="poin">1</span>
+    <input data-f="name" placeholder="Name (e.g. Work)">
+    <input data-f="lat" type="number" step="any" placeholder="Latitude">
+    <input data-f="lon" type="number" step="any" placeholder="Longitude">
+    <button class="linkbtn copy" data-setpoi="0" type="button">Set on map</button>
+  </div>
+  <div class="poirow" data-poi="1">
+    <span class="poin">2</span>
+    <input data-f="name" placeholder="Name (e.g. School)">
+    <input data-f="lat" type="number" step="any" placeholder="Latitude">
+    <input data-f="lon" type="number" step="any" placeholder="Longitude">
+    <button class="linkbtn copy" data-setpoi="1" type="button">Set on map</button>
+  </div>
+  <div class="poirow" data-poi="2">
+    <span class="poin">3</span>
+    <input data-f="name" placeholder="Name (optional third)">
+    <input data-f="lat" type="number" step="any" placeholder="Latitude">
+    <input data-f="lon" type="number" step="any" placeholder="Longitude">
+    <button class="linkbtn copy" data-setpoi="2" type="button">Set on map</button>
+  </div>
+  <div class="poibudgets">
+    <div><label for="budgetRent">Rent budget / month</label><input id="budgetRent" type="number" min="1" placeholder="1000"></div>
+    <div><label for="budgetSale">Purchase budget</label><input id="budgetSale" type="number" min="1" placeholder="500000"></div>
+  </div>
+  <div class="links" style="justify-content:flex-end"><button id="poiSave" class="linkbtn copy" type="button"><b>Save places</b></button></div>
+</div>
+
 <footer data-reveal>
-  <div class="footbrand"><span class="brandmark" aria-hidden="true">⌂</span>OIART Rental Finder</div>
-  <div class="footmeta">Built on the team's methodology &amp; cleaned data · <span id="footerCount">…</span> leads · London, Ontario</div>
+  <div class="footbrand"><span class="brandmark" aria-hidden="true">⌂</span>Home Finder</div>
+  <div class="footmeta">Score · map · decide — a free, open search tracker · <span id="footerCount">…</span> listings</div>
   <div class="footlinks">
     <a href="Build_Your_Own_Search_Tracker_Guide.pdf" download>Build-your-own guide (PDF)</a>
     <span aria-hidden="true">·</span>
